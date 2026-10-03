@@ -47,6 +47,17 @@ Web apps can't add home-screen widgets by themselves, so the widget runs in the 
 
 Add one widget per countdown. It draws the same dot grid, flips to the next dot after midnight, and refreshes about every 30 minutes so today's dot fills in. The script lives in [`widget/dots-widget.js`](widget/dots-widget.js).
 
+## Years — one dot per year
+
+A second app in [`years/`](years/), same look as Dots, where **each dot is a year**:
+
+- **My life:** enter your birthday and an expected lifespan (default 80). Lived years are solid, this year's dot fills in day by day, and the rest are soft. Rows of 10 read as decades.
+- **Goals:** a name, a start date, and a length in years or a target date. A target that isn't a whole number of years ends with a partial-year dot.
+- Shows years left, age or year number, time until your next birthday or anniversary, and days left. It moves to the next dot on the birthday or anniversary by itself.
+- It has its own iPhone widget, set up exactly like the Dots one (script name **Years**, parameter copied from the app).
+
+Once GitHub Pages is on, it lives at `…/sss/years/`. Install it to the home screen separately from Dots; the two keep separate data.
+
 ## Files
 
 | File | Purpose |
@@ -56,4 +67,5 @@ Add one widget per countdown. It draws the same dot grid, flips to the next dot 
 | `app.js` | State, dot grid, timer, storage |
 | `sw.js` | Service worker for offline use |
 | `widget/dots-widget.js` | iPhone home-screen widget (Scriptable) |
+| `years/` | The Years app (its own HTML, CSS, JS, service worker, manifest and widget) |
 | `manifest.webmanifest`, `icon.svg` | Makes it installable |

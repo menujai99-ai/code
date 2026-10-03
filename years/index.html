@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Years" />
+  <meta name="description" content="Your life and long goals, one dot per year." />
+  <title>Years — One Dot per Year</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- List view -->
+  <main id="list-view" class="view">
+    <header class="topbar">
+      <h1>Years</h1>
+      <button id="add-btn" class="icon-btn primary" aria-label="Add">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </button>
+    </header>
+    <ul id="item-list" class="task-list"></ul>
+    <section id="empty-state" class="empty" hidden>
+      <div class="empty-dots" aria-hidden="true"></div>
+      <h2>Every dot is a year</h2>
+      <p>See your life in years, or count down a long goal one year at a time.</p>
+      <button id="empty-life-btn" class="btn primary">Add my life</button>
+      <button id="empty-goal-btn" class="btn">Add a goal</button>
+    </section>
+  </main>
+
+  <!-- Detail view -->
+  <main id="detail-view" class="view" hidden>
+    <header class="topbar">
+      <button id="back-btn" class="icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+      </button>
+      <h1 id="detail-title" class="truncate"></h1>
+      <button id="edit-btn" class="icon-btn" aria-label="Edit">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /></svg>
+      </button>
+    </header>
+
+    <section class="hero">
+      <div class="hero-main">
+        <span id="big-num" class="big-num">0</span>
+        <span id="big-label" class="big-label">years left</span>
+      </div>
+      <div id="sub-line" class="day-of"></div>
+      <div class="timers">
+        <div class="timer">
+          <span id="next-label" class="timer-label">Birthday in</span>
+          <span id="next-timer" class="timer-value mono">--</span>
+        </div>
+        <div class="timer">
+          <span class="timer-label">Days left</span>
+          <span id="days-left" class="timer-value mono">--</span>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
+    </section>
+
+    <section class="grid-wrap">
+      <div id="dot-grid" class="dot-grid" role="img"></div>
+      <div class="legend">
+        <span><i class="dot past"></i>Done</span>
+        <span><i class="dot today"></i>This year</span>
+        <span><i class="dot future"></i>Ahead</span>
+      </div>
+    </section>
+    <button id="widget-btn" class="btn widget-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="18" height="8" rx="2" /></svg>
+      Add as home-screen widget
+    </button>
+    <div id="dot-tip" class="dot-tip" hidden></div>
+  </main>
+
+  <!-- Add / edit sheet -->
+  <dialog id="item-dialog" class="sheet">
+    <form id="item-form" method="dialog">
+      <h2 id="dialog-title">New</h2>
+
+      <div class="segmented kind-switch">
+        <input type="radio" id="kind-life" name="kind" value="life" checked />
+        <label for="kind-life">My life</label>
+        <input type="radio" id="kind-goal" name="kind" value="goal" />
+        <label for="kind-goal">Goal</label>
+      </div>
+
+      <label class="field">
+        <span>Name</span>
+        <input id="f-name" name="name" type="text" maxlength="60" placeholder="My life" />
+      </label>
+
+      <!-- Life -->
+      <div id="life-fields">
+        <label class="field">
+          <span>Birthday</span>
+          <input id="f-birthday" name="birthday" type="date" />
+        </label>
+        <label class="field">
+          <span>Expected lifespan (years)</span>
+          <input id="f-lifespan" name="lifespan" type="number" inputmode="numeric" min="1" max="130" value="80" />
+        </label>
+      </div>
+
+      <!-- Goal -->
+      <div id="goal-fields" hidden>
+        <label class="field">
+          <span>Start date</span>
+          <input id="f-start" name="start" type="date" />
+        </label>
+        <fieldset class="field">
+          <legend>Length</legend>
+          <div class="segmented">
+            <input type="radio" id="len-years" name="len" value="years" checked />
+            <label for="len-years">Number of years</label>
+            <input type="radio" id="len-until" name="len" value="until" />
+            <label for="len-until">Target date</label>
+          </div>
+          <input id="f-years" name="years" type="number" inputmode="numeric" min="1" max="130" value="10" aria-label="Number of years" />
+          <input id="f-end" name="end" type="date" aria-label="Target date" hidden />
+        </fieldset>
+      </div>
+
+      <small id="f-hint" class="hint"></small>
+
+      <fieldset class="field">
+        <legend>Colour</legend>
+        <div id="f-colors" class="swatches"></div>
+      </fieldset>
+
+      <div class="actions">
+        <button type="button" id="delete-btn" class="btn danger" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="cancel-btn" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Widget setup sheet -->
+  <dialog id="widget-dialog" class="sheet">
+    <h2>Home-screen widget</h2>
+    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app, which draws these year dots on your home screen and updates them every day.</p>
+    <ol class="steps">
+      <li>Install <b>Scriptable</b> from the App Store.</li>
+      <li>
+        <button type="button" id="copy-script" class="btn small">Copy widget script</button>
+        then in Scriptable tap <b>+</b>, paste, and name it <b>Years</b>. <span class="muted">(One time only.)</span>
+      </li>
+      <li>On your home screen, long-press → <b>+</b> → <b>Scriptable</b>, and pick a small, medium or large widget.</li>
+      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Years</b>. For <b>Parameter</b>, paste:
+        <div class="param-row">
+          <code id="widget-param"></code>
+          <button type="button" id="copy-param" class="btn small primary">Copy</button>
+        </div>
+      </li>
+    </ol>
+    <div class="actions"><span class="spacer"></span><button type="button" id="widget-close" class="btn">Done</button></div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
