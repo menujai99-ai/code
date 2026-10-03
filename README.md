@@ -40,18 +40,14 @@ It then opens full-screen like a native app and works offline.
 
 Web apps can't add home-screen widgets by themselves, so the widget runs in the free **Scriptable** app. It loads its code and your countdowns from GitHub Pages on every refresh, so **changes you make on GitHub show up on the widget by themselves**.
 
-**Your countdowns live in [`widget/countdowns.json`](widget/countdowns.json):**
+**Your countdowns live in [`widget/countdowns.json`](widget/countdowns.json), and the app keeps that file up to date for you.** Turn on **Widget sync** once (the cloud button next to **+**):
 
-```json
-[
-  { "name": "Exam prep", "start": "2026-09-07", "total": 100, "color": "#e8590c" },
-  { "name": "Ship the app", "start": "2026-10-03", "end": "2026-12-31", "color": "#1c7ed6" }
-]
-```
+1. On GitHub, create a [fine-grained token](https://github.com/settings/personal-access-tokens/new): *Repository access* → only this repo; *Permissions* → *Contents* → **Read and write**.
+2. In Dots, tap the cloud button, paste the token, and tap **Save & sync**. Countdowns already in the file are added to the app the first time.
 
-Each entry needs a `name`, a `start` date, and either `total` (days) or `end` (the last day). `color` is optional.
+From then on, every countdown you add, edit or delete in the app is written to `countdowns.json` automatically, and the widget shows it. The token is stored only in the app on your phone. A line under the title shows the sync status, with **Retry** if something went wrong; changes made offline sync when you're back online.
 
-The widget shows the dots, days left, and a live "Deadline in 73 days, 2 hr" line that iOS keeps counting down between refreshes. Edit the file on github.com (the pencil icon) and commit. In the app, **Add as home-screen widget** shows the current countdown as a ready-made entry to copy in.
+You can still edit the file by hand on GitHub. The widget forgives common slips such as a missing comma between entries. Each entry needs a `name`, a `start` date, and either `total` (days) or `end` (the last day); `color` is optional.
 
 **Set up (once):**
 

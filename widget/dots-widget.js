@@ -15,6 +15,8 @@
 //   a|b|c|d    → the old pasted format, ignoring countdowns.json
 
 const DEFAULT = 'Exam prep|2026-09-07|100|#e8590c';
+// Where GitHub Pages serves this repo (used to re-read countdowns.json leniently).
+const REPO_BASE = 'https://menujai99-ai.github.io/code/';
 const FALLBACK_COLOR = '#e8590c';
 
 const DAY_MS = 86400000;
@@ -50,6 +52,45 @@ function parseEntry(e) {
   }
   if (!(n > 0)) return null;
   return { name: String(e.name || 'Countdown'), start: s, total: n, color: validColor(e.color) };
+}
+
+/**
+ * Parse countdowns.json, forgiving common hand-editing slips: a missing
+ * comma between entries, trailing commas, and curly quotes.
+ * Returns { list } or { error }.
+ */
+function parseCountdowns(text) {
+  const asList = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : null);
+  try {
+    const list = asList(JSON.parse(text));
+    if (list) return { list };
+  } catch (e) {
+    /* try the repaired version below */
+  }
+  const fixed = String(text)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\}(\s*)\{/g, '},$1{')
+    .replace(/,(\s*[\]}])/g, '$1');
+  try {
+    const list = asList(JSON.parse(fixed));
+    if (list) return { list };
+    return { error: 'countdowns.json should be a list: [ {...}, {...} ]' };
+  } catch (e) {
+    return { error: `countdowns.json has a typo (${e.message}). Check its commas, quotes and brackets.` };
+  }
+}
+
+/** Fresh countdowns.json from GitHub Pages, or null when offline. */
+async function downloadCountdowns() {
+  try {
+    const req = new Request(`${REPO_BASE}widget/countdowns.json?t=${Date.now()}`);
+    req.timeoutInterval = 15;
+    const text = await req.loadString();
+    return req.response && req.response.statusCode === 200 ? text : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /** Returns { task } or { error }. */
@@ -300,7 +341,20 @@ function errorWidget(msg) {
 
 /** Build and show the widget. Called by loader.js, or below when pasted directly. */
 async function main({ countdowns, param } = {}) {
-  const { task, error } = pickTask(countdowns, param);
+  // The loader drops countdowns.json if it isn't strict JSON, so re-read it here
+  // leniently. This file updates itself, so even old loaders get the fix.
+  let list = countdowns;
+  let fileError = null;
+  if (globalThis.__DOTS_VIA_LOADER && !String(param || '').includes('|')) {
+    const text = await downloadCountdowns();
+    if (text != null) {
+      const parsed = parseCountdowns(text);
+      if (parsed.list) list = parsed.list;
+      else fileError = parsed.error;
+    }
+  }
+  let { task, error } = pickTask(list, param);
+  if (!task && fileError) error = fileError;
   const widget = task ? buildWidget(task, config.widgetFamily || 'large') : errorWidget(error);
   if (config.runsInWidget) {
     Script.setWidget(widget);

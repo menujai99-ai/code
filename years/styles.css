@@ -90,7 +90,7 @@ body {
 .btn.danger { background: transparent; color: var(--danger); padding-left: 4px; padding-right: 4px; }
 
 /* ---------- Task list ---------- */
-.task-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 12px; }
+.task-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 .task-card {
   --c: var(--accent);
@@ -108,7 +108,7 @@ body {
 }
 .task-card:active { transform: scale(0.99); }
 .card-head { display: flex; align-items: baseline; gap: 12px; }
-.card-name { flex: 1; font-weight: 650; font-size: 17px; }
+.card-name { flex: 1; min-width: 0; font-weight: 650; font-size: 17px; }
 .card-left { font-weight: 750; font-size: 22px; color: var(--c); }
 .card-left small { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 4px; }
 .card-sub { color: var(--muted); font-size: 14px; margin-top: 2px; }
