@@ -56,7 +56,7 @@ You can still edit the file by hand on GitHub. The widget forgives common slips 
 3. On your home screen: long-press → **+** → **Scriptable** → pick small, medium or large.
 4. Long-press the widget → **Edit Widget** → Script **Dots**, and set **Parameter** to the countdown's name (or its number, 1 = first; empty = first).
 
-After you commit a change, GitHub Pages takes about a minute to publish it, then the widget picks it up on its next refresh (about every 30 minutes; iOS decides exactly when). Offline, the widget shows the last version it downloaded. The old setup (pasting [`widget/dots-widget.js`](widget/dots-widget.js) with a `name|start|total|colour` parameter) still works.
+**How fast does the widget update?** The app saves to GitHub the moment you tap Save (even if you close the app straight away), and the widget reads straight from the repo, so a new countdown is ready on the widget's very next refresh. *When* that refresh happens is up to iOS: the widget asks for one every 15 minutes, but iOS may wait longer to save battery. **Tap the widget** to update it right away. Larger and medium widgets show "Updated 2:41 PM" so you can see when it last refreshed. Offline, the widget shows the last version it downloaded.
 
 ## Years — one dot per year
 
