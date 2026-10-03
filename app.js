@@ -585,6 +585,8 @@ async function github(method, body) {
         ...(body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      // Let a save finish even if the app is closed right after it.
+      keepalive: method === 'PUT',
     });
   } catch {
     throw new SyncError(0, 'offline');
@@ -767,6 +769,9 @@ $('sync-retry').addEventListener('click', () => {
   runSync();
 });
 window.addEventListener('online', () => runSync());
+// Leaving the app: push anything unsynced now. Coming back: retry what's pending.
+document.addEventListener('visibilitychange', () => runSync());
+window.addEventListener('pagehide', () => runSync());
 
 /* ---------- Home-screen widget (Scriptable) ---------- */
 

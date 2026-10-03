@@ -17,6 +17,14 @@
 const DEFAULT = 'Exam prep|2026-09-07|100|#e8590c';
 // Where GitHub Pages serves this repo (used to re-read countdowns.json leniently).
 const REPO_BASE = 'https://menujai99-ai.github.io/code/';
+// The same file straight from the repo: new commits show up here at once,
+// without waiting for GitHub Pages to rebuild. Public repo, so no token needed.
+const REPO_API = 'https://api.github.com/repos/menujai99-ai/code/contents/widget/countdowns.json';
+// How often to ask iOS for a refresh (iOS decides the real timing).
+const REFRESH_MINUTES = 15;
+
+// Shown on the widget: when the countdowns were last fetched, or that it's offline.
+let freshness = '';
 const FALLBACK_COLOR = '#e8590c';
 
 const DAY_MS = 86400000;
@@ -81,16 +89,29 @@ function parseCountdowns(text) {
   }
 }
 
-/** Fresh countdowns.json from GitHub Pages, or null when offline. */
-async function downloadCountdowns() {
+async function fetchText(url, headers) {
   try {
-    const req = new Request(`${REPO_BASE}widget/countdowns.json?t=${Date.now()}`);
+    const req = new Request(url);
     req.timeoutInterval = 15;
+    if (headers) req.headers = headers;
     const text = await req.loadString();
     return req.response && req.response.statusCode === 200 ? text : null;
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * Fresh countdowns.json, or null when offline. Tries the GitHub API first
+ * (up to date the moment the app commits), then GitHub Pages.
+ */
+async function downloadCountdowns() {
+  const fromApi = await fetchText(`${REPO_API}?t=${Date.now()}`, {
+    Accept: 'application/vnd.github.raw',
+    'User-Agent': 'Dots-widget',
+  });
+  if (fromApi != null) return fromApi;
+  return fetchText(`${REPO_BASE}widget/countdowns.json?t=${Date.now()}`);
 }
 
 /** Returns { task } or { error }. */
@@ -244,7 +265,7 @@ function buildWidget(task, family) {
   w.backgroundColor = BG;
   w.setPadding(14, 14, 14, 14);
   // Refresh at midnight (dot flips) and every ~30 min for today's fill.
-  w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 5000, now.getTime() + 30 * 60000));
+  w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 5000, now.getTime() + REFRESH_MINUTES * 60000));
   w.url = 'scriptable:///run/' + encodeURIComponent(Script.name());
 
   if (family === 'small') {
@@ -276,6 +297,7 @@ function buildWidget(task, family) {
     addText(col, subline(task, st), Font.systemFont(11), MUTED);
     col.addSpacer(2);
     addDeadline(col, task, st, 11, accent, { stacked: true });
+    if (freshness) addText(col, freshness, Font.systemFont(9), MUTED);
     row.addSpacer(10);
     row.addImage(drawDots(task, st, 180, 128, dark));
     return w;
@@ -290,6 +312,7 @@ function buildWidget(task, family) {
   addText(left, task.name, Font.semiboldSystemFont(15), TEXT);
   addText(left, subline(task, st), Font.systemFont(12), MUTED);
   addDeadline(left, task, st, 12, accent);
+  if (freshness) addText(left, freshness, Font.systemFont(10), MUTED);
   head.addSpacer();
   const right = head.addStack();
   right.layoutVertically();
@@ -351,6 +374,9 @@ async function main({ countdowns, param } = {}) {
       const parsed = parseCountdowns(text);
       if (parsed.list) list = parsed.list;
       else fileError = parsed.error;
+      freshness = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    } else {
+      freshness = 'Offline · last saved copy';
     }
   }
   let { task, error } = pickTask(list, param);

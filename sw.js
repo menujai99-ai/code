@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, serve from cache, refresh in the background.
-const CACHE = 'dots-v5';
+const CACHE = 'dots-v6';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'widget/dots-widget.js', 'widget/loader.js', 'widget/countdowns.json'];
 
 self.addEventListener('install', (e) => {
