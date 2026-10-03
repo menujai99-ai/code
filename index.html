@@ -20,10 +20,14 @@
   <main id="list-view" class="view">
     <header class="topbar">
       <h1>Dots</h1>
+      <button id="sync-btn" class="icon-btn" aria-label="Widget sync">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4.5 4.5 0 0 1-.6-8.96A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5H7z" /><path d="M12 16v-5M9.5 13.5 12 11l2.5 2.5" /></svg>
+      </button>
       <button id="add-btn" class="icon-btn primary" aria-label="Add countdown">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
     </header>
+    <p id="sync-status" class="sync-status" hidden><span id="sync-text"></span> <button type="button" id="sync-retry" class="link-btn" hidden>Retry</button></p>
     <ul id="task-list" class="task-list"></ul>
     <section id="empty-state" class="empty" hidden>
       <div class="empty-dots" aria-hidden="true"></div>
@@ -133,11 +137,9 @@
     <h2>Home-screen widget</h2>
     <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app. The widget loads its code and your countdowns from GitHub, so edits there show up on your home screen by themselves.</p>
     <ol class="steps">
-      <li>Add this countdown to <a id="json-link" href="https://github.com/menujai99-ai/code/edit/main/widget/countdowns.json" target="_blank" rel="noopener"><code>widget/countdowns.json</code></a> on GitHub (inside the <code>[ ]</code>, separated by commas):
-        <div class="param-row">
-          <code id="widget-json"></code>
-          <button type="button" id="copy-json" class="btn small">Copy</button>
-        </div>
+      <li id="sync-step">
+        <span id="sync-step-on" hidden>✓ <b>Widget sync is on.</b> Every countdown you add, edit or delete here is sent to GitHub automatically.</span>
+        <span id="sync-step-off">Turn on <button type="button" id="open-sync" class="btn small primary">Widget sync</button> so every countdown you add here shows up on the widget automatically.</span>
       </li>
       <li>Install <b>Scriptable</b> from the App Store.</li>
       <li>
@@ -153,6 +155,35 @@
       </li>
     </ol>
     <div class="actions"><span class="spacer"></span><button type="button" id="widget-close" class="btn">Done</button></div>
+  </dialog>
+
+  <!-- Widget sync (GitHub) sheet -->
+  <dialog id="sync-dialog" class="sheet">
+    <form id="sync-form" method="dialog">
+      <h2>Widget sync</h2>
+      <p class="muted">Dots saves your countdowns to <code>widget/countdowns.json</code> in your GitHub repo whenever you add, edit or delete one, and the widget reads them from there.</p>
+      <ol class="steps">
+        <li>On GitHub, create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a>:
+          <b>Repository access</b> → Only select repositories → your repo;
+          <b>Permissions</b> → Contents → <b>Read and write</b>. Copy the token.</li>
+        <li>Paste it below and tap <b>Save &amp; sync</b>.</li>
+      </ol>
+      <label class="field">
+        <span>Repository</span>
+        <input id="s-repo" type="text" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="owner/repo" />
+      </label>
+      <label class="field">
+        <span>Token</span>
+        <input id="s-token" type="password" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="github_pat_…" />
+      </label>
+      <small id="s-hint" class="hint">The token is stored only in this app on this phone.</small>
+      <div class="actions">
+        <button type="button" id="sync-off" class="btn danger" hidden>Turn off</button>
+        <span class="spacer"></span>
+        <button type="button" id="sync-cancel" class="btn">Cancel</button>
+        <button type="submit" id="sync-save" class="btn primary">Save &amp; sync</button>
+      </div>
+    </form>
   </dialog>
 
   <script src="app.js"></script>
