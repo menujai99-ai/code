@@ -1,33 +1,73 @@
 // Dots — home-screen widget for iPhone (runs in the free "Scriptable" app).
 //
-// Setup:
-//   1. Install Scriptable from the App Store.
-//   2. In Scriptable tap +, paste this whole file, name it "Dots".
-//   3. On your home screen add a Scriptable widget (small, medium or large),
-//      long-press it → Edit Widget → Script: Dots.
-//   4. Parameter: paste the line from Dots → your countdown → "Home-screen widget",
-//      e.g.  Exam prep|2026-09-07|100|#e8590c
-//      (name | start date | total days | colour). One widget per countdown.
+// Recommended: install widget/loader.js in Scriptable instead of this file.
+// The loader downloads this script and widget/countdowns.json from GitHub
+// Pages on every refresh, so edits on GitHub show up without re-pasting.
 //
-// If the parameter is empty, the DEFAULT below is used.
+// This file also still works pasted on its own (named "Dots"), with the
+// widget Parameter set to  name|start date|total days|colour,  e.g.
+//   Exam prep|2026-09-07|100|#e8590c
+//
+// Choosing a countdown via the Parameter (when loaded by the loader):
+//   empty      → the first countdown in countdowns.json
+//   Exam prep  → the countdown with that name (any capitalisation)
+//   2          → the second countdown
+//   a|b|c|d    → the old pasted format, ignoring countdowns.json
 
 const DEFAULT = 'Exam prep|2026-09-07|100|#e8590c';
+const FALLBACK_COLOR = '#e8590c';
 
 const DAY_MS = 86400000;
 
-/* ---------- Parse the widget parameter ---------- */
+/* ---------- Pick and parse the countdown ---------- */
 
-function parseTask(raw) {
-  const [name, start, total, color] = String(raw || DEFAULT).split('|').map((s) => s.trim());
-  const [y, m, d] = (start || '').split('-').map(Number);
+function parseDate(str) {
+  const [y, m, d] = String(str || '').split('-').map(Number);
+  return y && m && d ? new Date(y, m - 1, d) : null;
+}
+function validColor(c) {
+  return /^#[0-9a-f]{6}$/i.test(c || '') ? c : FALLBACK_COLOR;
+}
+
+/** Old format: "name|YYYY-MM-DD|total|#colour". */
+function parseLine(raw) {
+  const [name, start, total, color] = String(raw).split('|').map((s) => s.trim());
+  const s = parseDate(start);
   const n = parseInt(total, 10);
-  if (!y || !m || !d || !(n > 0)) return null;
-  return {
-    name: name || 'Countdown',
-    start: new Date(y, m - 1, d),
-    total: n,
-    color: /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#e8590c',
-  };
+  if (!s || !(n > 0)) return null;
+  return { name: name || 'Countdown', start: s, total: n, color: validColor(color) };
+}
+
+/** An entry of countdowns.json: { name, start, total | end, color? }. */
+function parseEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const s = parseDate(e.start);
+  if (!s) return null;
+  let n = parseInt(e.total, 10);
+  if (!(n > 0) && e.end) {
+    const end = parseDate(e.end);
+    if (end) n = Math.round((end - s) / DAY_MS) + 1; // end = last day, inclusive
+  }
+  if (!(n > 0)) return null;
+  return { name: String(e.name || 'Countdown'), start: s, total: n, color: validColor(e.color) };
+}
+
+/** Returns { task } or { error }. */
+function pickTask(countdowns, param) {
+  const p = String(param || '').trim();
+  if (p.includes('|')) {
+    const task = parseLine(p);
+    return task ? { task } : { error: 'Parameter format: name|YYYY-MM-DD|total|#colour' };
+  }
+  const list = (Array.isArray(countdowns) ? countdowns : []).map(parseEntry).filter(Boolean);
+  if (!list.length) return { error: 'No countdowns found. Add one to widget/countdowns.json on GitHub.' };
+  if (!p) return { task: list[0] };
+  if (/^\d+$/.test(p)) {
+    const t = list[parseInt(p, 10) - 1];
+    return t ? { task: t } : { error: `There are only ${list.length} countdowns.` };
+  }
+  const t = list.find((x) => x.name.toLowerCase() === p.toLowerCase());
+  return t ? { task: t } : { error: `No countdown named "${p}". Available: ${list.map((x) => x.name).join(', ')}` };
 }
 
 /* ---------- Same day maths as the app ---------- */
@@ -225,16 +265,23 @@ function errorWidget(msg) {
   return w;
 }
 
-const raw = config.runsInWidget ? args.widgetParameter : (args.widgetParameter || DEFAULT);
-const task = parseTask(raw);
-const family = config.widgetFamily || 'large';
-const widget = task
-  ? buildWidget(task, family)
-  : errorWidget('Set the widget Parameter to: name|YYYY-MM-DD|total|#colour (copy it from the Dots app).');
+/* ---------- Entry points ---------- */
 
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-} else {
-  await widget.presentLarge();
+/** Build and show the widget. Called by loader.js, or below when pasted directly. */
+async function main({ countdowns, param } = {}) {
+  const { task, error } = pickTask(countdowns, param);
+  const widget = task ? buildWidget(task, config.widgetFamily || 'large') : errorWidget(error);
+  if (config.runsInWidget) {
+    Script.setWidget(widget);
+  } else {
+    await widget.presentLarge();
+  }
+  Script.complete();
 }
-Script.complete();
+
+module.exports = { main };
+
+// Pasted straight into Scriptable (no loader): use the Parameter line, or DEFAULT.
+if (!globalThis.__DOTS_VIA_LOADER) {
+  main({ param: args.widgetParameter || DEFAULT });
+}

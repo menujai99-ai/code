@@ -131,15 +131,21 @@
   <!-- Widget setup sheet -->
   <dialog id="widget-dialog" class="sheet">
     <h2>Home-screen widget</h2>
-    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app, which draws this countdown's dots on your home screen and updates them by itself.</p>
+    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app. The widget loads its code and your countdowns from GitHub, so edits there show up on your home screen by themselves.</p>
     <ol class="steps">
+      <li>Add this countdown to <a id="json-link" href="https://github.com/menujai99-ai/sss/edit/main/widget/countdowns.json" target="_blank" rel="noopener"><code>widget/countdowns.json</code></a> on GitHub (inside the <code>[ ]</code>, separated by commas):
+        <div class="param-row">
+          <code id="widget-json"></code>
+          <button type="button" id="copy-json" class="btn small">Copy</button>
+        </div>
+      </li>
       <li>Install <b>Scriptable</b> from the App Store.</li>
       <li>
-        <button type="button" id="copy-script" class="btn small">Copy widget script</button>
-        then in Scriptable tap <b>+</b>, paste, and name it <b>Dots</b>. <span class="muted">(One time only.)</span>
+        <button type="button" id="copy-script" class="btn small">Copy widget loader</button>
+        then in Scriptable tap <b>+</b>, paste, and name it <b>Dots</b>. <span class="muted">(One time only, for all countdowns.)</span>
       </li>
       <li>On your home screen, long-press → <b>+</b> → <b>Scriptable</b>, and pick a small, medium or large widget.</li>
-      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Dots</b>. For <b>Parameter</b>, paste:
+      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Dots</b>. For <b>Parameter</b>, enter the name:
         <div class="param-row">
           <code id="widget-param"></code>
           <button type="button" id="copy-param" class="btn small primary">Copy</button>

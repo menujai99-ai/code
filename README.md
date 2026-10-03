@@ -38,14 +38,27 @@ It then opens full-screen like a native app and works offline.
 
 ## Home-screen widget (iPhone)
 
-Web apps can't add home-screen widgets by themselves, so the widget runs in the free **Scriptable** app.
+Web apps can't add home-screen widgets by themselves, so the widget runs in the free **Scriptable** app. It loads its code and your countdowns from GitHub Pages on every refresh, so **changes you make on GitHub show up on the widget by themselves**.
+
+**Your countdowns live in [`widget/countdowns.json`](widget/countdowns.json):**
+
+```json
+[
+  { "name": "Exam prep", "start": "2026-09-07", "total": 100, "color": "#e8590c" },
+  { "name": "Ship the app", "start": "2026-10-03", "end": "2026-12-31", "color": "#1c7ed6" }
+]
+```
+
+Each entry needs a `name`, a `start` date, and either `total` (days) or `end` (the last day). `color` is optional. Edit the file on github.com (the pencil icon) and commit. In the app, **Add as home-screen widget** shows the current countdown as a ready-made entry to copy in.
+
+**Set up (once):**
 
 1. Install **Scriptable** from the App Store.
-2. In Dots, open a countdown → **Add as home-screen widget** → **Copy widget script**. In Scriptable tap **+**, paste, and name it **Dots** (one time only).
+2. In Dots, open a countdown → **Add as home-screen widget** → **Copy widget loader**. In Scriptable tap **+**, paste, and name it **Dots**. You never need to paste it again.
 3. On your home screen: long-press → **+** → **Scriptable** → pick small, medium or large.
-4. Long-press the widget → **Edit Widget** → Script **Dots**, and paste the **Parameter** line copied from the app (e.g. `Exam prep|2026-09-07|100|#e8590c`).
+4. Long-press the widget → **Edit Widget** → Script **Dots**, and set **Parameter** to the countdown's name (or its number, 1 = first; empty = first).
 
-Add one widget per countdown. It draws the same dot grid, flips to the next dot after midnight, and refreshes about every 30 minutes so today's dot fills in. The script lives in [`widget/dots-widget.js`](widget/dots-widget.js).
+After you commit a change, GitHub Pages takes about a minute to publish it, then the widget picks it up on its next refresh (about every 30 minutes; iOS decides exactly when). Offline, the widget shows the last version it downloaded. The old setup (pasting [`widget/dots-widget.js`](widget/dots-widget.js) with a `name|start|total|colour` parameter) still works.
 
 ## Years — one dot per year
 
@@ -66,6 +79,8 @@ Once GitHub Pages is on, it lives at `…/sss/years/`. Install it to the home sc
 | `styles.css` | Mobile-first styles, light & dark mode |
 | `app.js` | State, dot grid, timer, storage |
 | `sw.js` | Service worker for offline use |
-| `widget/dots-widget.js` | iPhone home-screen widget (Scriptable) |
+| `widget/loader.js` | The script you paste into Scriptable once; loads the widget from GitHub |
+| `widget/dots-widget.js` | The widget itself (downloaded by the loader) |
+| `widget/countdowns.json` | Your countdowns for the widget, edited on GitHub |
 | `years/` | The Years app (its own HTML, CSS, JS, service worker, manifest and widget) |
 | `manifest.webmanifest`, `icon.svg` | Makes it installable |
