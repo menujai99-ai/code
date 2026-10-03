@@ -266,17 +266,21 @@ function buildWidget(task, family) {
   w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 5000, now.getTime() + REFRESH_MINUTES * 60000));
   w.url = 'scriptable:///run/' + encodeURIComponent(Script.name());
 
+  // Heights are tight (about 130pt of content in small/medium); anything that
+  // doesn't fit is cut off by iOS, so keep these stacks within budget.
   if (family === 'small') {
+    w.setPadding(12, 12, 12, 12);
     const top = w.addStack();
     top.centerAlignContent();
-    addText(top, num, Font.heavySystemFont(26), accent);
+    addText(top, num, Font.heavySystemFont(24), accent);
     top.addSpacer(4);
     addText(top, label, Font.semiboldSystemFont(11), MUTED);
-    w.addSpacer(6);
-    w.addImage(drawDots(task, st, 130, 68, dark)).centerAlignImage();
+    w.addSpacer(4);
+    w.addImage(drawDots(task, st, 130, 52, dark)).centerAlignImage();
     w.addSpacer(4);
     addText(w, task.name, Font.semiboldSystemFont(11), TEXT);
     addDeadline(w, task, st, 10, accent, { label: 'Ends in' });
+    if (freshness) addText(w, freshness, Font.systemFont(9), MUTED);
     return w;
   }
 
@@ -286,18 +290,25 @@ function buildWidget(task, family) {
     row.centerAlignContent();
     const col = row.addStack();
     col.layoutVertically();
-    col.size = new Size(110, 0);
-    addText(col, task.name, Font.semiboldSystemFont(13), TEXT, 2);
-    col.addSpacer(4);
-    addText(col, num, Font.heavySystemFont(38), accent);
-    addText(col, label, Font.semiboldSystemFont(12), MUTED);
-    col.addSpacer(4);
+    col.size = new Size(116, 0);
+    addText(col, task.name, Font.semiboldSystemFont(13), TEXT);
+    col.addSpacer(2);
+    const big = col.addStack();
+    big.layoutHorizontally();
+    big.bottomAlignContent();
+    addText(big, num, Font.heavySystemFont(30), accent);
+    big.addSpacer(4);
+    addText(big, label, Font.semiboldSystemFont(11), MUTED);
+    col.addSpacer(2);
     addText(col, subline(task, st), Font.systemFont(11), MUTED);
     col.addSpacer(2);
     addDeadline(col, task, st, 11, accent, { stacked: true });
-    if (freshness) addText(col, freshness, Font.systemFont(9), MUTED);
+    if (freshness) {
+      col.addSpacer(2);
+      addText(col, freshness, Font.systemFont(9), MUTED);
+    }
     row.addSpacer(10);
-    row.addImage(drawDots(task, st, 180, 128, dark));
+    row.addImage(drawDots(task, st, 176, 124, dark));
     return w;
   }
 
