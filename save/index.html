@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Stash" />
+  <meta name="description" content="Save toward goals, one dot at a time, and earn rewards for bigger intentions." />
+  <title>Stash — Save Money</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="stash.css" />
+</head>
+<body>
+  <!-- Home -->
+  <main id="list-view" class="view">
+    <header class="topbar">
+      <h1>Stash</h1>
+      <button id="settings-btn" class="icon-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>
+      </button>
+      <button id="add-btn" class="icon-btn primary" aria-label="New goal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+      </button>
+    </header>
+
+    <!-- Level / rewards -->
+    <section class="level-card">
+      <div class="level-row">
+        <span id="level-badge" class="level-badge">1</span>
+        <div class="level-text">
+          <b id="level-title">Seedling Saver</b>
+          <small id="level-next" class="muted">0 / 50 XP to level 2</small>
+        </div>
+      </div>
+      <div class="progress"><div id="xp-fill" class="progress-fill"></div></div>
+      <div class="stats">
+        <div><span class="timer-label">Saved</span><b id="stat-saved" class="mono">0</b></div>
+        <div><span class="timer-label">Streak</span><b id="stat-streak" class="mono">0</b></div>
+        <div><span class="timer-label">Skipped</span><b id="stat-skipped" class="mono">0</b></div>
+      </div>
+    </section>
+
+    <div class="quick">
+      <button id="quick-add" class="btn primary">+ Add money</button>
+      <button id="quick-skip" class="btn">I skipped a buy</button>
+    </div>
+
+    <h2 class="section">Goals</h2>
+    <ul id="goal-list" class="task-list"></ul>
+    <section id="empty-state" class="empty" hidden>
+      <div class="empty-dots" aria-hidden="true"></div>
+      <h3>Every dot is money saved</h3>
+      <p>Pick something worth saving for. Bigger goals earn more XP and a bigger treat.</p>
+      <button id="empty-add-btn" class="btn primary">Create my first goal</button>
+    </section>
+
+    <h2 class="section">Want list <small class="muted">wait before you buy</small></h2>
+    <ul id="want-list" class="want-list"></ul>
+    <button id="want-add" class="btn ghost">+ I want to buy something…</button>
+
+    <h2 class="section">Badges</h2>
+    <div id="badges" class="badges"></div>
+  </main>
+
+  <!-- Goal detail -->
+  <main id="detail-view" class="view" hidden>
+    <header class="topbar">
+      <button id="back-btn" class="icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+      </button>
+      <h1 id="detail-title" class="truncate"></h1>
+      <button id="edit-btn" class="icon-btn" aria-label="Edit goal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /></svg>
+      </button>
+    </header>
+
+    <section class="hero">
+      <div class="hero-main">
+        <span id="big-num" class="big-num">0</span>
+        <span id="big-label" class="big-label">saved</span>
+      </div>
+      <div id="sub-line" class="day-of"></div>
+      <div class="timers">
+        <div class="timer">
+          <span id="pace-label" class="timer-label">Save per week</span>
+          <span id="pace-value" class="timer-value mono">—</span>
+        </div>
+        <div class="timer">
+          <span id="left-label" class="timer-label">To go</span>
+          <span id="left-value" class="timer-value mono">—</span>
+        </div>
+      </div>
+      <div class="progress" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
+      <div id="track" class="track"></div>
+    </section>
+
+    <div class="quick">
+      <button id="detail-add" class="btn primary">+ Add money</button>
+      <button id="detail-take" class="btn">Take out</button>
+    </div>
+
+    <section class="reward-card">
+      <div class="reward-head">
+        <span id="tier-icon" class="tier-icon">🌱</span>
+        <div>
+          <b id="tier-name">Small step</b>
+          <small id="tier-desc" class="muted"></small>
+        </div>
+      </div>
+      <div id="treat" class="treat"></div>
+      <ol id="milestones" class="milestones"></ol>
+    </section>
+
+    <section class="grid-wrap">
+      <div id="dot-grid" class="dot-grid" role="img"></div>
+      <div class="legend">
+        <span><i class="dot past"></i>Saved</span>
+        <span><i class="dot today"></i>Filling</span>
+        <span><i class="dot future"></i>To go</span>
+      </div>
+    </section>
+
+    <h2 class="section">History</h2>
+    <ul id="history" class="history"></ul>
+    <div id="dot-tip" class="dot-tip" hidden></div>
+  </main>
+
+  <!-- Goal sheet -->
+  <dialog id="goal-dialog" class="sheet">
+    <form id="goal-form" method="dialog">
+      <h2 id="goal-title">New goal</h2>
+      <label class="field">
+        <span>What are you saving for?</span>
+        <input id="g-name" type="text" maxlength="60" placeholder="e.g. Emergency fund" />
+      </label>
+      <label class="field">
+        <span>Target amount</span>
+        <input id="g-target" type="number" inputmode="decimal" min="1" step="any" placeholder="1000" />
+      </label>
+      <div id="g-tier" class="tier-preview"></div>
+      <label class="field">
+        <span>Target date <small>(optional — gives you a weekly pace)</small></span>
+        <input id="g-date" type="date" />
+      </label>
+      <label class="field">
+        <span>My reward when I reach it</span>
+        <input id="g-treat" type="text" maxlength="80" placeholder="e.g. Nice dinner out" />
+      </label>
+      <fieldset class="field">
+        <legend>Colour</legend>
+        <div id="g-colors" class="swatches"></div>
+      </fieldset>
+      <small id="g-hint" class="hint"></small>
+      <div class="actions">
+        <button type="button" id="goal-delete" class="btn danger" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Money sheet -->
+  <dialog id="money-dialog" class="sheet">
+    <form id="money-form" method="dialog">
+      <h2 id="money-title">Add money</h2>
+      <div class="segmented three">
+        <input type="radio" id="m-add" name="kind" value="add" checked />
+        <label for="m-add">Saved</label>
+        <input type="radio" id="m-skip" name="kind" value="skip" />
+        <label for="m-skip">Skipped a buy</label>
+        <input type="radio" id="m-take" name="kind" value="take" />
+        <label for="m-take">Took out</label>
+      </div>
+      <label class="field">
+        <span>Amount</span>
+        <input id="m-amount" type="number" inputmode="decimal" min="0.01" step="any" placeholder="0" />
+      </label>
+      <div id="m-chips" class="chips"></div>
+      <label class="field">
+        <span>Goal</span>
+        <select id="m-goal"></select>
+      </label>
+      <label class="field">
+        <span id="m-note-label">Note</span>
+        <input id="m-note" type="text" maxlength="80" placeholder="optional" />
+      </label>
+      <small id="m-hint" class="hint"></small>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Want sheet -->
+  <dialog id="want-dialog" class="sheet">
+    <form id="want-form" method="dialog">
+      <h2>Wait before you buy</h2>
+      <p class="muted">Put it on the list and wait. If you still want it later, buy it guilt-free. If not, skip it and the money goes to a goal — with bonus XP for waiting it out.</p>
+      <label class="field">
+        <span>What do you want?</span>
+        <input id="w-name" type="text" maxlength="60" placeholder="e.g. New headphones" />
+      </label>
+      <label class="field">
+        <span>Price</span>
+        <input id="w-price" type="number" inputmode="decimal" min="0.01" step="any" placeholder="0" />
+      </label>
+      <label class="field">
+        <span>Cool-off</span>
+        <select id="w-hours">
+          <option value="24">24 hours</option>
+          <option value="48" selected>48 hours</option>
+          <option value="72">3 days</option>
+          <option value="168">1 week</option>
+          <option value="720">30 days</option>
+        </select>
+      </label>
+      <small id="w-hint" class="hint"></small>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Start waiting</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Settings -->
+  <dialog id="settings-dialog" class="sheet">
+    <form id="settings-form" method="dialog">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Currency</span>
+        <select id="s-currency"></select>
+      </label>
+      <label class="field">
+        <span>A “big” goal for me starts at</span>
+        <input id="s-big" type="number" inputmode="decimal" min="1" step="any" />
+        <small class="hint">Sets the reward tiers: Solid from ¼ of this, Big from this, Huge from 5×. Pick what feels like a real stretch for you.</small>
+      </label>
+      <div class="actions wrap">
+        <button type="button" id="s-export" class="btn small">Export backup</button>
+        <label class="btn small file-btn">Import backup<input id="s-import" type="file" accept="application/json,.json" /></label>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Celebration -->
+  <dialog id="party-dialog" class="sheet party">
+    <div id="party-icon" class="party-icon">🎉</div>
+    <h2 id="party-title">Nice!</h2>
+    <ul id="party-list" class="party-list"></ul>
+    <div class="actions"><span class="spacer"></span><button type="button" class="btn primary" data-close>Keep going</button></div>
+  </dialog>
+  <canvas id="confetti" class="confetti" popover="manual" aria-hidden="true"></canvas>
+
+  <script src="app.js"></script>
+</body>
+</html>

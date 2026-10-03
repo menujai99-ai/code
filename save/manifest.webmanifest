@@ -1,0 +1,14 @@
+{
+  "name": "Stash — Save Money",
+  "short_name": "Stash",
+  "description": "Save toward goals, one dot at a time, and earn rewards for bigger intentions.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

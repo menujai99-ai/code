@@ -73,6 +73,18 @@ A second app in [`years/`](years/), same look as Dots, where **each dot is a yea
 
 Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
 
+## Stash — save money, earn rewards
+
+A third app in [`save/`](save/), same look, for **building a saving habit**:
+
+- **Goals as dots.** Give a goal a target (and optionally a date). Each dot is a round amount (e.g. $20), and dots fill as you save. With a date you get a weekly pace and an on-track / behind line. Without one, you get an estimate of when you'll finish.
+- **Bigger intentions, bigger rewards.** Every goal has a tier set by its size: 🌱 Small step ×1, 🌿 Solid ×1.5, 🌳 Big ×2, 🏔️ Huge ×3. The multiplier applies to XP on every save. Bigger goals also pay bigger 25/50/75/100% milestone bonuses and a bigger **treat budget** (2–5% of the goal) for the reward you choose. Set what counts as "big" for you in Settings.
+- **XP, levels and badges.** Level up from Seedling Saver to Legend of Thrift. Badges for streaks, skipping purchases, halfway, finishing a Big or Huge goal and more. New ones show up with confetti.
+- **I skipped a buy.** Didn't buy the coffee? Log it, and the money goes to a goal.
+- **Want list (cool-off).** Add something you're tempted by and wait 24h to 30 days. If you skip it after the wait, it earns ×1.5 XP. If you still want it, buy it guilt-free.
+- **Streaks** for each day you put money away. Withdrawals are allowed, but they take back their XP.
+- Everything stays on your device. Use **Export / Import backup** in Settings to move it. Lives at `https://menujai99-ai.github.io/code/save/`.
+
 ## Files
 
 | File | Purpose |
@@ -85,4 +97,5 @@ Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/
 | `widget/dots-widget.js` | The widget itself (downloaded by the loader) |
 | `widget/countdowns.json` | Your countdowns for the widget, edited on GitHub |
 | `years/` | The Years app (its own HTML, CSS, JS, service worker, manifest and widget) |
+| `save/` | The Stash savings app (its own HTML, CSS, JS, service worker and manifest) |
 | `manifest.webmanifest`, `icon.svg` | Makes it installable |
