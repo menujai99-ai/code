@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Dots" />
-  <meta name="description" content="Count down the days of any goal, one dot per day." />
-  <title>Dots — Days Left</title>
+  <meta name="apple-mobile-web-app-title" content="Years" />
+  <meta name="description" content="Your life and long goals, one dot per year." />
+  <title>Years — One Dot per Year</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
@@ -19,17 +19,18 @@
   <!-- List view -->
   <main id="list-view" class="view">
     <header class="topbar">
-      <h1>Dots</h1>
-      <button id="add-btn" class="icon-btn primary" aria-label="Add countdown">
+      <h1>Years</h1>
+      <button id="add-btn" class="icon-btn primary" aria-label="Add">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
     </header>
-    <ul id="task-list" class="task-list"></ul>
+    <ul id="item-list" class="task-list"></ul>
     <section id="empty-state" class="empty" hidden>
       <div class="empty-dots" aria-hidden="true"></div>
-      <h2>No countdowns yet</h2>
-      <p>Track any goal one day at a time — every dot is a day.</p>
-      <button id="empty-add-btn" class="btn primary">Add your first countdown</button>
+      <h2>Every dot is a year</h2>
+      <p>See your life in years, or count down a long goal one year at a time.</p>
+      <button id="empty-life-btn" class="btn primary">Add my life</button>
+      <button id="empty-goal-btn" class="btn">Add a goal</button>
     </section>
   </main>
 
@@ -40,25 +41,25 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
       </button>
       <h1 id="detail-title" class="truncate"></h1>
-      <button id="edit-btn" class="icon-btn" aria-label="Edit countdown">
+      <button id="edit-btn" class="icon-btn" aria-label="Edit">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /></svg>
       </button>
     </header>
 
     <section class="hero">
       <div class="hero-main">
-        <span id="days-left" class="big-num">0</span>
-        <span id="days-left-label" class="big-label">days left</span>
+        <span id="big-num" class="big-num">0</span>
+        <span id="big-label" class="big-label">years left</span>
       </div>
-      <div id="day-of" class="day-of"></div>
+      <div id="sub-line" class="day-of"></div>
       <div class="timers">
         <div class="timer">
-          <span class="timer-label">Next day in</span>
-          <span id="next-day-timer" class="timer-value mono">--:--:--</span>
+          <span id="next-label" class="timer-label">Birthday in</span>
+          <span id="next-timer" class="timer-value mono">--</span>
         </div>
         <div class="timer">
-          <span class="timer-label">Deadline in</span>
-          <span id="deadline-timer" class="timer-value mono">--</span>
+          <span class="timer-label">Days left</span>
+          <span id="days-left" class="timer-value mono">--</span>
         </div>
       </div>
       <div class="progress" aria-hidden="true"><div id="progress-fill" class="progress-fill"></div></div>
@@ -68,8 +69,8 @@
       <div id="dot-grid" class="dot-grid" role="img"></div>
       <div class="legend">
         <span><i class="dot past"></i>Done</span>
-        <span><i class="dot today"></i>Today</span>
-        <span><i class="dot future"></i>Left</span>
+        <span><i class="dot today"></i>This year</span>
+        <span><i class="dot future"></i>Ahead</span>
       </div>
     </section>
     <button id="widget-btn" class="btn widget-btn">
@@ -80,39 +81,54 @@
   </main>
 
   <!-- Add / edit sheet -->
-  <dialog id="task-dialog" class="sheet">
-    <form id="task-form" method="dialog">
-      <h2 id="dialog-title">New countdown</h2>
+  <dialog id="item-dialog" class="sheet">
+    <form id="item-form" method="dialog">
+      <h2 id="dialog-title">New</h2>
+
+      <div class="segmented kind-switch">
+        <input type="radio" id="kind-life" name="kind" value="life" checked />
+        <label for="kind-life">My life</label>
+        <input type="radio" id="kind-goal" name="kind" value="goal" />
+        <label for="kind-goal">Goal</label>
+      </div>
 
       <label class="field">
         <span>Name</span>
-        <input id="f-name" name="name" type="text" maxlength="60" placeholder="e.g. Exam prep" required />
+        <input id="f-name" name="name" type="text" maxlength="60" placeholder="My life" />
       </label>
 
-      <fieldset class="field">
-        <legend>Starting point</legend>
-        <div class="segmented">
-          <input type="radio" id="mode-day" name="mode" value="day" checked />
-          <label for="mode-day">I'm on day…</label>
-          <input type="radio" id="mode-date" name="mode" value="date" />
-          <label for="mode-date">Start date</label>
-        </div>
-        <input id="f-current" name="current" type="number" inputmode="numeric" min="1" value="1" aria-label="Current day" />
-        <input id="f-start" name="start" type="date" aria-label="Start date" hidden />
-      </fieldset>
+      <!-- Life -->
+      <div id="life-fields">
+        <label class="field">
+          <span>Birthday</span>
+          <input id="f-birthday" name="birthday" type="date" />
+        </label>
+        <label class="field">
+          <span>Expected lifespan (years)</span>
+          <input id="f-lifespan" name="lifespan" type="number" inputmode="numeric" min="1" max="130" value="80" />
+        </label>
+      </div>
 
-      <fieldset class="field">
-        <legend>Length</legend>
-        <div class="segmented">
-          <input type="radio" id="len-days" name="len" value="days" checked />
-          <label for="len-days">Number of days</label>
-          <input type="radio" id="len-until" name="len" value="until" />
-          <label for="len-until">Target date</label>
-        </div>
-        <input id="f-total" name="total" type="number" inputmode="numeric" min="1" max="3650" value="100" aria-label="Total days" />
-        <input id="f-end" name="end" type="date" aria-label="Target date (last day)" hidden />
-        <small id="f-hint" class="hint"></small>
-      </fieldset>
+      <!-- Goal -->
+      <div id="goal-fields" hidden>
+        <label class="field">
+          <span>Start date</span>
+          <input id="f-start" name="start" type="date" />
+        </label>
+        <fieldset class="field">
+          <legend>Length</legend>
+          <div class="segmented">
+            <input type="radio" id="len-years" name="len" value="years" checked />
+            <label for="len-years">Number of years</label>
+            <input type="radio" id="len-until" name="len" value="until" />
+            <label for="len-until">Target date</label>
+          </div>
+          <input id="f-years" name="years" type="number" inputmode="numeric" min="1" max="130" value="10" aria-label="Number of years" />
+          <input id="f-end" name="end" type="date" aria-label="Target date" hidden />
+        </fieldset>
+      </div>
+
+      <small id="f-hint" class="hint"></small>
 
       <fieldset class="field">
         <legend>Colour</legend>
@@ -131,21 +147,15 @@
   <!-- Widget setup sheet -->
   <dialog id="widget-dialog" class="sheet">
     <h2>Home-screen widget</h2>
-    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app. The widget loads its code and your countdowns from GitHub, so edits there show up on your home screen by themselves.</p>
+    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app, which draws these year dots on your home screen and updates them every day.</p>
     <ol class="steps">
-      <li>Add this countdown to <a id="json-link" href="https://github.com/menujai99-ai/code/edit/main/widget/countdowns.json" target="_blank" rel="noopener"><code>widget/countdowns.json</code></a> on GitHub (inside the <code>[ ]</code>, separated by commas):
-        <div class="param-row">
-          <code id="widget-json"></code>
-          <button type="button" id="copy-json" class="btn small">Copy</button>
-        </div>
-      </li>
       <li>Install <b>Scriptable</b> from the App Store.</li>
       <li>
-        <button type="button" id="copy-script" class="btn small">Copy widget loader</button>
-        then in Scriptable tap <b>+</b>, paste, and name it <b>Dots</b>. <span class="muted">(One time only, for all countdowns.)</span>
+        <button type="button" id="copy-script" class="btn small">Copy widget script</button>
+        then in Scriptable tap <b>+</b>, paste, and name it <b>Years</b>. <span class="muted">(One time only.)</span>
       </li>
       <li>On your home screen, long-press → <b>+</b> → <b>Scriptable</b>, and pick a small, medium or large widget.</li>
-      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Dots</b>. For <b>Parameter</b>, enter the name:
+      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Years</b>. For <b>Parameter</b>, paste:
         <div class="param-row">
           <code id="widget-param"></code>
           <button type="button" id="copy-param" class="btn small primary">Copy</button>

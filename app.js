@@ -501,19 +501,19 @@ $('edit-btn').addEventListener('click', () => openSheet(tasks.find((t) => t.id =
 
 const widgetDialog = $('widget-dialog');
 
-/** The line pasted into the widget's Parameter field. */
-function widgetParam(task) {
-  return [task.name.replace(/\|/g, '/'), task.start, task.total, task.color].join('|');
+/** This countdown as an entry for widget/countdowns.json on GitHub. */
+function widgetJson(task) {
+  return JSON.stringify({ name: task.name, start: task.start, total: task.total, color: task.color });
 }
 
 let widgetScript = '';
 function loadWidgetScript() {
   if (widgetScript) return;
-  fetch('widget/dots-widget.js')
+  fetch('widget/loader.js')
     .then((res) => (res.ok ? res.text() : Promise.reject(res.status)))
     .then((text) => {
       widgetScript = text;
-      $('copy-script').textContent = 'Copy widget script';
+      $('copy-script').textContent = 'Copy widget loader';
     })
     .catch(() => ($('copy-script').textContent = 'Could not load script'));
 }
@@ -546,11 +546,13 @@ function copyText(text, btn) {
 $('widget-btn').addEventListener('click', () => {
   const task = tasks.find((t) => t.id === openId);
   if (!task) return;
-  $('widget-param').textContent = widgetParam(task);
+  $('widget-param').textContent = task.name;
+  $('widget-json').textContent = widgetJson(task);
   loadWidgetScript();
   widgetDialog.showModal();
 });
 $('copy-param').addEventListener('click', (e) => copyText($('widget-param').textContent, e.currentTarget));
+$('copy-json').addEventListener('click', (e) => copyText($('widget-json').textContent, e.currentTarget));
 $('copy-script').addEventListener('click', (e) => {
   // Copy synchronously inside the tap — iOS rejects clipboard writes after an await.
   if (widgetScript) copyText(widgetScript, e.currentTarget);

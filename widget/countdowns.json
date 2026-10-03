@@ -1,0 +1,4 @@
+[
+  { "name": "Exam prep", "start": "2026-09-07", "total": 100, "color": "#e8590c" },
+  { "name": "Ship the app", "start": "2026-10-03", "end": "2026-12-31", "color": "#1c7ed6" }
+]
