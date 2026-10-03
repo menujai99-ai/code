@@ -240,29 +240,40 @@ function renderDetail(now = new Date(), { animate = false } = {}) {
   updateLive(now);
 }
 
-/** Pick a column count so the grid fills the screen nicely for any total. */
+/** Small, evenly spaced dots: size shrinks as the total grows. */
+function dotSize(total) {
+  if (total <= 30) return 18;
+  if (total <= 60) return 15;
+  if (total <= 120) return 13;
+  if (total <= 250) return 11;
+  if (total <= 500) return 9;
+  return 7;
+}
+
+/** Pick a column count so the grid is roughly square and fits the width. */
 function layoutGrid() {
   const task = tasks.find((t) => t.id === openId);
   if (!task || detailView.hidden) return;
   const total = task.total;
-  const W = grid.clientWidth || window.innerWidth - 32;
-  const top = grid.getBoundingClientRect().top;
-  const H = Math.max(160, window.innerHeight - top - 70);
-  const ideal = Math.sqrt((total * W) / H);
-  let cols = Math.round(ideal);
+  const W = grid.clientWidth || window.innerWidth - 64;
+  let size = dotSize(total);
+  let gap = Math.round(size * 0.7);
+  const fit = () => Math.max(1, Math.floor((W + gap) / (size + gap)));
+  // Very long countdowns on narrow screens: shrink until a sensible grid fits.
+  while (size > 5 && Math.ceil(total / fit()) > fit() * 2.2) {
+    size -= 1;
+    gap = Math.round(size * 0.7);
+  }
+  const maxCols = fit();
+  let cols = Math.min(maxCols, total, Math.ceil(Math.sqrt(total)));
   // Prefer a nearby column count that divides the total evenly (tidy last row).
   for (let d = 0; d <= 2; d++) {
-    if (total % (cols + d) === 0) { cols += d; break; }
+    if (cols + d <= maxCols && total % (cols + d) === 0) { cols += d; break; }
     if (cols - d > 0 && total % (cols - d) === 0) { cols -= d; break; }
   }
-  const maxCols = Math.max(1, Math.floor(W / 8));
-  cols = Math.max(Math.min(total, 5), Math.min(cols, maxCols, total));
-  const cell = W / cols;
-  const gap = Math.max(2, Math.min(10, Math.round(cell * 0.28)));
   grid.style.setProperty('--cols', cols);
+  grid.style.setProperty('--size', `${size}px`);
   grid.style.setProperty('--gap', `${gap}px`);
-  // Keep huge single dots (e.g. a 3-day task) from becoming giant.
-  grid.style.maxWidth = `${Math.max(cols * 64, 200)}px`;
 }
 
 /** Cheap per-second update: numbers, timers and today's fill ring. */
