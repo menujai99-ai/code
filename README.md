@@ -65,7 +65,12 @@ A second app in [`years/`](years/), same look as Dots, where **each dot is a yea
 - **My life:** enter your birthday and an expected lifespan (default 80). Lived years are solid, this year's dot fills in day by day, and the rest are soft. Rows of 10 read as decades.
 - **Goals:** a name, a start date, and a length in years or a target date. A target that isn't a whole number of years ends with a partial-year dot.
 - Shows years left, age or year number, time until your next birthday or anniversary, and days left. It moves to the next dot on the birthday or anniversary by itself.
-- It has its own iPhone widget, set up exactly like the Dots one (script name **Years**, parameter copied from the app).
+- It has its own iPhone widget that updates itself, just like Dots:
+  1. In Years, tap the cloud button to turn on **Widget sync**. If it's already on in Dots, the same token is used automatically. Your items are saved to [`years/widget/years.json`](years/widget/years.json).
+  2. Open an item → **Add as home-screen widget** → **Copy widget loader**. In Scriptable tap **+**, paste, and name it **Years** (once).
+  3. Add a Scriptable widget, set Script **Years**, When Interacting **Run Script**, and Parameter to the item's name (or its number; empty = first).
+
+  The widget shows the year dots, years left, a live "Birthday in …" / "Ends in …" line, and "Updated 3:07 PM". The old pasted `life|name|start|end|colour` parameter still works.
 
 Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
 
@@ -81,4 +86,6 @@ Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/
 | `widget/dots-widget.js` | The widget itself (downloaded by the loader) |
 | `widget/countdowns.json` | Your countdowns for the widget, edited on GitHub |
 | `years/` | The Years app (its own HTML, CSS, JS, service worker, manifest and widget) |
+| `years/widget/loader.js` | The script you paste into Scriptable once for Years |
+| `years/widget/years.json` | Your Years items for the widget, kept up to date by the app |
 | `manifest.webmanifest`, `icon.svg` | Makes it installable |
