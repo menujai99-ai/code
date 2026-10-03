@@ -71,7 +71,7 @@ A second app in [`years/`](years/), same look as Dots, where **each dot is a yea
 - Shows years left, age or year number, time until your next birthday or anniversary, and days left. It moves to the next dot on the birthday or anniversary by itself.
 - It has its own iPhone widget, set up exactly like the Dots one (script name **Years**, parameter copied from the app).
 
-Once GitHub Pages is on, it lives at `…/sss/years/`. Install it to the home screen separately from Dots; the two keep separate data.
+Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
 
 ## Files
 

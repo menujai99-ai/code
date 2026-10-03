@@ -10,7 +10,8 @@
 //
 // Offline, it uses the last downloaded copy.
 
-const BASE = 'https://menujai99-ai.github.io/sss/';
+const BASE = 'https://menujai99-ai.github.io/code/';
+// (If you rename the repo, change "code" above to the new name and paste this script again.)
 const CACHE_DIR = 'dots-cache';
 
 // Keep the cache next to this script so importModule can find it.
