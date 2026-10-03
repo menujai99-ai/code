@@ -72,6 +72,10 @@
         <span><i class="dot future"></i>Left</span>
       </div>
     </section>
+    <button id="widget-btn" class="btn widget-btn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2" /><rect x="13" y="3" width="8" height="8" rx="2" /><rect x="3" y="13" width="18" height="8" rx="2" /></svg>
+      Add as home-screen widget
+    </button>
     <div id="dot-tip" class="dot-tip" hidden></div>
   </main>
 
@@ -115,6 +119,27 @@
         <button type="submit" class="btn primary">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Widget setup sheet -->
+  <dialog id="widget-dialog" class="sheet">
+    <h2>Home-screen widget</h2>
+    <p class="muted">iPhone widgets come from the free <b>Scriptable</b> app, which draws this countdown's dots on your home screen and updates them by itself.</p>
+    <ol class="steps">
+      <li>Install <b>Scriptable</b> from the App Store.</li>
+      <li>
+        <button type="button" id="copy-script" class="btn small">Copy widget script</button>
+        then in Scriptable tap <b>+</b>, paste, and name it <b>Dots</b>. <span class="muted">(One time only.)</span>
+      </li>
+      <li>On your home screen, long-press → <b>+</b> → <b>Scriptable</b>, and pick a small, medium or large widget.</li>
+      <li>Long-press the widget → <b>Edit Widget</b> → Script: <b>Dots</b>. For <b>Parameter</b>, paste:
+        <div class="param-row">
+          <code id="widget-param"></code>
+          <button type="button" id="copy-param" class="btn small primary">Copy</button>
+        </div>
+      </li>
+    </ol>
+    <div class="actions"><span class="spacer"></span><button type="button" id="widget-close" class="btn">Done</button></div>
   </dialog>
 
   <script src="app.js"></script>

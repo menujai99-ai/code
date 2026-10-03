@@ -470,6 +470,70 @@ $('add-btn').addEventListener('click', () => openSheet(null));
 $('empty-add-btn').addEventListener('click', () => openSheet(null));
 $('edit-btn').addEventListener('click', () => openSheet(tasks.find((t) => t.id === openId)));
 
+/* ---------- Home-screen widget (Scriptable) ---------- */
+
+const widgetDialog = $('widget-dialog');
+
+/** The line pasted into the widget's Parameter field. */
+function widgetParam(task) {
+  return [task.name.replace(/\|/g, '/'), task.start, task.total, task.color].join('|');
+}
+
+let widgetScript = '';
+function loadWidgetScript() {
+  if (widgetScript) return;
+  fetch('widget/dots-widget.js')
+    .then((res) => (res.ok ? res.text() : Promise.reject(res.status)))
+    .then((text) => {
+      widgetScript = text;
+      $('copy-script').textContent = 'Copy widget script';
+    })
+    .catch(() => ($('copy-script').textContent = 'Could not load script'));
+}
+
+function copyText(text, btn) {
+  const label = btn.textContent;
+  const done = (ok) => {
+    btn.textContent = ok ? 'Copied ✓' : 'Copy failed';
+    setTimeout(() => (btn.textContent = label), 1600);
+  };
+  const fallback = () => {
+    // Clipboard API blocked (e.g. not https): use a hidden textarea.
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    widgetDialog.append(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    done(ok);
+  };
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => done(true), fallback);
+  } else {
+    fallback();
+  }
+}
+
+$('widget-btn').addEventListener('click', () => {
+  const task = tasks.find((t) => t.id === openId);
+  if (!task) return;
+  $('widget-param').textContent = widgetParam(task);
+  loadWidgetScript();
+  widgetDialog.showModal();
+});
+$('copy-param').addEventListener('click', (e) => copyText($('widget-param').textContent, e.currentTarget));
+$('copy-script').addEventListener('click', (e) => {
+  // Copy synchronously inside the tap — iOS rejects clipboard writes after an await.
+  if (widgetScript) copyText(widgetScript, e.currentTarget);
+  else e.currentTarget.textContent = 'Loading… tap again';
+});
+$('widget-close').addEventListener('click', () => widgetDialog.close());
+widgetDialog.addEventListener('click', (e) => {
+  if (e.target === widgetDialog) widgetDialog.close();
+});
+
 /* ---------- The timer: keeps everything in sync with the clock ---------- */
 
 function tick() {
