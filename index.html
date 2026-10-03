@@ -89,11 +89,6 @@
         <input id="f-name" name="name" type="text" maxlength="60" placeholder="e.g. Exam prep" required />
       </label>
 
-      <label class="field">
-        <span>Total days</span>
-        <input id="f-total" name="total" type="number" inputmode="numeric" min="1" max="3650" value="100" required />
-      </label>
-
       <fieldset class="field">
         <legend>Starting point</legend>
         <div class="segmented">
@@ -104,6 +99,18 @@
         </div>
         <input id="f-current" name="current" type="number" inputmode="numeric" min="1" value="1" aria-label="Current day" />
         <input id="f-start" name="start" type="date" aria-label="Start date" hidden />
+      </fieldset>
+
+      <fieldset class="field">
+        <legend>Length</legend>
+        <div class="segmented">
+          <input type="radio" id="len-days" name="len" value="days" checked />
+          <label for="len-days">Number of days</label>
+          <input type="radio" id="len-until" name="len" value="until" />
+          <label for="len-until">Target date</label>
+        </div>
+        <input id="f-total" name="total" type="number" inputmode="numeric" min="1" max="3650" value="100" aria-label="Total days" />
+        <input id="f-end" name="end" type="date" aria-label="Target date (last day)" hidden />
         <small id="f-hint" class="hint"></small>
       </fieldset>
 

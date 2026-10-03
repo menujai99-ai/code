@@ -33,6 +33,11 @@ function daysBetween(a, b) {
 }
 const fmtDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const fmtDateYear = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const fmtDateFull = new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+/** "Mon, Nov 14", plus the year when it isn't this year. */
+function fmtDay(d) {
+  return d.getFullYear() === new Date().getFullYear() ? fmtDate.format(d) : fmtDateFull.format(d);
+}
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -203,7 +208,7 @@ function renderList(now = new Date()) {
 function subtitle(st) {
   if (st.state === 'upcoming') return `Starts in ${plural(st.daysUntilStart, 'day')} · ${plural(st.total, 'day')}`;
   if (st.state === 'done') return `Completed ${fmtDateYear.format(addDays(st.end, -1))} · ${plural(st.total, 'day')}`;
-  return `Day ${st.currentDay} of ${st.total} · ends ${fmtDate.format(addDays(st.end, -1))}`;
+  return `Day ${st.currentDay} of ${st.total} · ends ${fmtDay(addDays(st.end, -1))}`;
 }
 
 /* ---------- Detail view ---------- */
@@ -285,7 +290,7 @@ function updateLive(now = new Date()) {
   if (st.state === 'upcoming') {
     $('days-left').textContent = st.daysUntilStart;
     $('days-left-label').textContent = st.daysUntilStart === 1 ? 'day to start' : 'days to start';
-    $('day-of').textContent = `Starts ${fmtDate.format(st.start)} · ${plural(st.total, 'day')}`;
+    $('day-of').textContent = `Starts ${fmtDay(st.start)} · ${plural(st.total, 'day')}`;
     $('next-day-timer').previousElementSibling.textContent = 'Starts in';
     $('next-day-timer').textContent = formatLong(st.msToNextDay);
   } else if (st.state === 'done') {
@@ -297,7 +302,7 @@ function updateLive(now = new Date()) {
   } else {
     $('days-left').textContent = st.daysLeft;
     $('days-left-label').textContent = st.daysLeft === 1 ? 'day left' : 'days left';
-    $('day-of').textContent = `Day ${st.currentDay} of ${st.total} · last day ${fmtDate.format(addDays(st.end, -1))}`;
+    $('day-of').textContent = `Day ${st.currentDay} of ${st.total} · last day ${fmtDay(addDays(st.end, -1))}`;
     $('next-day-timer').previousElementSibling.textContent = 'Next day in';
     $('next-day-timer').textContent = formatClock(st.msToNextDay);
   }
@@ -318,7 +323,7 @@ grid.addEventListener('click', (e) => {
   const i = Number(dot.dataset.i);
   const date = addDays(parseISODate(task.start), i);
   const state = dot.classList.contains('today') ? ' · today' : dot.classList.contains('past') ? ' · done' : '';
-  tip.textContent = `Day ${i + 1} · ${fmtDate.format(date)}${state}`;
+  tip.textContent = `Day ${i + 1} · ${fmtDay(date)}${state}`;
   const r = dot.getBoundingClientRect();
   tip.hidden = false;
   const half = tip.offsetWidth / 2;
@@ -360,6 +365,7 @@ const fName = $('f-name');
 const fTotal = $('f-total');
 const fCurrent = $('f-current');
 const fStart = $('f-start');
+const fEnd = $('f-end');
 const fHint = $('f-hint');
 
 // Colour swatches
@@ -379,6 +385,9 @@ for (const [i, c] of COLORS.entries()) {
 function mode() {
   return form.elements.mode.value;
 }
+function lenMode() {
+  return form.elements.len.value;
+}
 
 /** Start date implied by the form, or null if invalid. */
 function formStart() {
@@ -388,21 +397,31 @@ function formStart() {
   return addDays(startOfDay(new Date()), -(day - 1));
 }
 
+/** Total days implied by the form: typed directly, or start → target date (inclusive). */
+function formTotal(start) {
+  if (lenMode() === 'days') return parseInt(fTotal.value, 10);
+  if (!start || !fEnd.value) return NaN;
+  return daysBetween(start, parseISODate(fEnd.value)) + 1;
+}
+
 function updateHint() {
   const isDay = mode() === 'day';
   fCurrent.hidden = !isDay;
   fStart.hidden = isDay;
-  const total = parseInt(fTotal.value, 10);
-  fCurrent.max = total > 0 ? total : '';
+  const byDays = lenMode() === 'days';
+  fTotal.hidden = !byDays;
+  fEnd.hidden = byDays;
   const start = formStart();
+  const total = formTotal(start);
+  fCurrent.max = byDays && total > 0 ? total : '';
   if (!start || !(total > 0)) {
-    fHint.textContent = '';
+    fHint.textContent = !byDays && start && fEnd.value ? 'Target date must be on or after the start date.' : '';
     return;
   }
   const last = addDays(start, total - 1);
   const st = getStatus({ start: toISODate(start), total }, new Date());
   const left = st.state === 'done' ? 'already finished' : st.state === 'upcoming' ? `starts in ${plural(st.daysUntilStart, 'day')}` : `${plural(st.daysLeft, 'day')} left`;
-  fHint.textContent = `${fmtDate.format(start)} → ${fmtDate.format(last)} · ${left}`;
+  fHint.textContent = `${fmtDay(start)} → ${fmtDay(last)} · ${plural(total, 'day')} · ${left}`;
 }
 form.addEventListener('input', updateHint);
 form.addEventListener('change', updateHint);
@@ -421,6 +440,8 @@ function openSheet(task) {
   fCurrent.value = st && st.state === 'active' ? st.currentDay : 1;
   const useDate = st && st.state !== 'active';
   form.elements.mode.value = useDate ? 'date' : 'day';
+  form.elements.len.value = 'days';
+  fEnd.value = toISODate(task ? addDays(parseISODate(task.start), task.total - 1) : addDays(new Date(), 99));
   updateHint();
   dialog.showModal();
   if (!task) fName.focus();
@@ -429,11 +450,17 @@ function openSheet(task) {
 form.addEventListener('submit', (e) => {
   e.preventDefault();
   const name = fName.value.trim();
-  const total = parseInt(fTotal.value, 10);
   const start = formStart();
+  const total = formTotal(start);
   if (!name) return fName.focus();
-  if (!(total >= 1 && total <= 3650)) return fTotal.focus();
   if (!start) return (mode() === 'day' ? fCurrent : fStart).focus();
+  if (!(total >= 1 && total <= 3650)) {
+    if (lenMode() === 'until') {
+      fHint.textContent = total > 3650 ? 'Target date is more than 10 years away.' : 'Target date must be on or after the start date.';
+      return fEnd.focus();
+    }
+    return fTotal.focus();
+  }
   if (mode() === 'day' && parseInt(fCurrent.value, 10) > total) {
     fHint.textContent = `Current day can't be more than ${total}.`;
     return fCurrent.focus();

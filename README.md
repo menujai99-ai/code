@@ -15,6 +15,8 @@ Tap **+**, give it a name and the total number of days, then either:
 - **I'm on day…** — e.g. `27` if you're already 27 days in (the start date is worked out for you), or
 - **Start date** — pick the date day 1 was (or will be).
 
+For the length, type a **Number of days** or pick a **Target date** (the last day, up to 10 years ahead) and the days are counted for you. You can change the name, start and target any time with the pencil button.
+
 Tap a countdown to see the full dot grid. Tap any dot to see its date.
 
 ## Run it
