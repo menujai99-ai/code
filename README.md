@@ -49,7 +49,9 @@ Web apps can't add home-screen widgets by themselves, so the widget runs in the 
 ]
 ```
 
-Each entry needs a `name`, a `start` date, and either `total` (days) or `end` (the last day). `color` is optional. Edit the file on github.com (the pencil icon) and commit. In the app, **Add as home-screen widget** shows the current countdown as a ready-made entry to copy in.
+Each entry needs a `name`, a `start` date, and either `total` (days) or `end` (the last day). `color` is optional.
+
+The widget shows the dots, days left, and a live "Deadline in 73 days, 2 hr" line that iOS keeps counting down between refreshes. Edit the file on github.com (the pencil icon) and commit. In the app, **Add as home-screen widget** shows the current countdown as a ready-made entry to copy in.
 
 **Set up (once):**
 

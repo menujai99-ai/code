@@ -213,9 +213,10 @@ function buildWidget(task, family) {
     top.addSpacer(4);
     addText(top, label, Font.semiboldSystemFont(11), MUTED);
     w.addSpacer(6);
-    w.addImage(drawDots(task, st, 130, 82, dark)).centerAlignImage();
+    w.addImage(drawDots(task, st, 130, 68, dark)).centerAlignImage();
     w.addSpacer(4);
     addText(w, task.name, Font.semiboldSystemFont(11), TEXT);
+    addDeadline(w, task, st, 10, accent, { label: 'Ends in' });
     return w;
   }
 
@@ -232,6 +233,8 @@ function buildWidget(task, family) {
     addText(col, label, Font.semiboldSystemFont(12), MUTED);
     col.addSpacer(4);
     addText(col, subline(task, st), Font.systemFont(11), MUTED);
+    col.addSpacer(2);
+    addDeadline(col, task, st, 11, accent, { stacked: true });
     row.addSpacer(10);
     row.addImage(drawDots(task, st, 180, 128, dark));
     return w;
@@ -245,6 +248,7 @@ function buildWidget(task, family) {
   left.layoutVertically();
   addText(left, task.name, Font.semiboldSystemFont(15), TEXT);
   addText(left, subline(task, st), Font.systemFont(12), MUTED);
+  addDeadline(left, task, st, 12, accent);
   head.addSpacer();
   const right = head.addStack();
   right.layoutVertically();
@@ -254,6 +258,33 @@ function buildWidget(task, family) {
   w.addImage(drawDots(task, st, 310, 250, dark)).centerAlignImage();
   w.addSpacer();
   return w;
+}
+
+/**
+ * "Deadline in 73 days, 2 hr" — the date is drawn by iOS in relative
+ * style, so it keeps counting down live between widget refreshes.
+ */
+function addDeadline(stack, task, st, size, color, { label = 'Deadline in', stacked = false } = {}) {
+  const row = stack.addStack();
+  if (stacked) row.layoutVertically();
+  else {
+    row.layoutHorizontally();
+    row.centerAlignContent();
+    row.spacing = 3;
+  }
+  if (st.state === 'done') {
+    addText(row, 'Completed', Font.semiboldSystemFont(size), color);
+    return row;
+  }
+  const upcoming = st.state === 'upcoming';
+  addText(row, upcoming ? 'Starts in' : label, Font.systemFont(size), MUTED);
+  const d = row.addDate(upcoming ? task.start : addDays(task.start, task.total));
+  d.applyRelativeStyle();
+  d.font = Font.semiboldSystemFont(size);
+  d.textColor = color;
+  d.lineLimit = 1;
+  d.minimumScaleFactor = 0.6;
+  return row;
 }
 
 function errorWidget(msg) {
