@@ -1,4 +1,11 @@
-# Dots — Days Left
+# Dots & Years
+
+Two tiny mobile apps (installable PWAs) that count down what matters, one dot at a time. The site's start page (`https://menujai99-ai.github.io/code/`) links to both:
+
+- **Dots** (`…/code/dots/`): one dot per day for countdowns and deadlines.
+- **Years** (`…/code/years/`): one dot per year for your life and long goals.
+
+## Dots — Days Left
 
 A tiny mobile app (installable PWA) that counts down the days of any goal, **one dot per day**.
 
@@ -25,13 +32,13 @@ It's plain HTML/CSS/JS — no build step.
 
 ```sh
 python3 -m http.server 8000
-# open http://localhost:8000
+# open http://localhost:8000 (start page), /dots/ or /years/
 ```
 
 ## Put it on your phone
 
 1. Host the folder on any static host — e.g. enable **GitHub Pages** for this repo (Settings → Pages → deploy from branch).
-2. Open the URL on your phone.
+2. On your phone, open the app's own address (`…/code/dots/` or `…/code/years/`), not the start page, so the home-screen icon opens straight into that app.
 3. **iPhone (Safari):** Share → *Add to Home Screen*. **Android (Chrome):** ⋮ → *Install app* / *Add to Home screen*.
 
 It then opens full-screen like a native app and works offline.
@@ -72,20 +79,22 @@ A second app in [`years/`](years/), same look as Dots, where **each dot is a yea
 
   The widget shows the year dots, years left, a live "Birthday in …" / "Ends in …" line, and "Updated 3:07 PM". The old pasted `life|name|start|end|colour` parameter still works.
 
-Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
+It lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | App shell: list view, detail view, add/edit sheet |
-| `styles.css` | Mobile-first styles, light & dark mode |
-| `app.js` | State, dot grid, timer, storage |
-| `sw.js` | Service worker for offline use |
+| `index.html`, `manifest.webmanifest` | Start page linking to Dots and Years |
+| `sw.js` | Retired root service worker: clears the old cache from when Dots lived at the root |
+| `dots/index.html` | Dots app shell: list view, detail view, add/edit sheet |
+| `dots/styles.css` | Mobile-first styles, light & dark mode |
+| `dots/app.js` | State, dot grid, timer, storage, widget sync |
+| `dots/sw.js` | Service worker for offline use |
 | `widget/loader.js` | The script you paste into Scriptable once; loads the widget from GitHub |
 | `widget/dots-widget.js` | The widget itself (downloaded by the loader) |
 | `widget/countdowns.json` | Your countdowns for the widget, edited on GitHub |
 | `years/` | The Years app (its own HTML, CSS, JS, service worker, manifest and widget) |
 | `years/widget/loader.js` | The script you paste into Scriptable once for Years |
 | `years/widget/years.json` | Your Years items for the widget, kept up to date by the app |
-| `manifest.webmanifest`, `icon.svg` | Makes it installable |
+| `dots/manifest.webmanifest`, `dots/icon.svg` | Makes Dots installable |
