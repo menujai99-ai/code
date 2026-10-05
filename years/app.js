@@ -122,7 +122,6 @@ function saveItems() {
   } catch {
     /* storage unavailable (private mode) — keep working in memory */
   }
-  requestSync(); // keep the widget's years.json on GitHub up to date
 }
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -507,305 +506,23 @@ $('empty-life-btn').addEventListener('click', () => openSheet(null, 'life'));
 $('empty-goal-btn').addEventListener('click', () => openSheet(null, 'goal'));
 $('edit-btn').addEventListener('click', () => openSheet(items.find((t) => t.id === openId)));
 
-/* ---------- Widget sync: years.json on GitHub ---------- */
-// The widget reads years/widget/years.json from GitHub. With a token, every
-// add / edit / delete here rewrites that file through the GitHub API. The
-// token is shared with Dots (same site), so setting it in either app is enough.
-
-const SYNC_KEY = 'years.sync.v1';
-const SHARED_KEY = 'dots.sync.v1'; // repo + token, shared with the Dots app
-const SYNC_PATH = 'years/widget/years.json';
-const DEFAULT_REPO = 'menujai99-ai/code';
-const syncDialog = $('sync-dialog');
-
-let sync = loadSync(); // { repo, token, dirty, lastSynced }
-let syncRunning = false;
-let syncQueued = false;
-
-function loadSync() {
-  try {
-    const shared = JSON.parse(localStorage.getItem(SHARED_KEY) || '{}');
-    const own = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
-    // own.off: sync turned off in Years only (the Dots token is left alone).
-    const s = { repo: shared.repo || DEFAULT_REPO, token: own.off ? undefined : shared.token, off: own.off, dirty: own.dirty, lastSynced: own.lastSynced };
-    // First time with a Dots token already set: start in sync mode and push once.
-    if (s.token && own.dirty === undefined) s.dirty = true;
-    return s;
-  } catch {
-    return { repo: DEFAULT_REPO };
-  }
-}
-function saveSync() {
-  try {
-    localStorage.setItem(SYNC_KEY, JSON.stringify({ off: Boolean(sync.off), dirty: Boolean(sync.dirty), lastSynced: sync.lastSynced }));
-    if (sync.token) {
-      const shared = JSON.parse(localStorage.getItem(SHARED_KEY) || '{}');
-      localStorage.setItem(SHARED_KEY, JSON.stringify({ ...shared, repo: sync.repo, token: sync.token }));
-    }
-  } catch {
-    /* keep in memory */
-  }
-}
-function syncOn() {
-  return Boolean(sync.token && sync.repo);
-}
-
-/** The whole years.json, one item per line. */
-function itemsFile() {
-  const rows = items.map((t) => '  ' + JSON.stringify({ kind: t.kind, name: t.name, start: t.start, end: t.end, color: t.color }));
-  return rows.length ? `[\n${rows.join(',\n')}\n]\n` : '[]\n';
-}
-
-/** Same forgiving reader as the widget: fixes missing/trailing commas and curly quotes. */
-function parseCountdowns(text) {
-  const asList = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : null);
-  try {
-    return asList(JSON.parse(text)) || [];
-  } catch {
-    /* try repaired */
-  }
-  const fixed = String(text)
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/\}(\s*)\{/g, '},$1{')
-    .replace(/,(\s*[\]}])/g, '$1');
-  try {
-    return asList(JSON.parse(fixed)) || [];
-  } catch {
-    return [];
-  }
-}
-
-function toBase64(str) {
-  let bin = '';
-  for (const b of new TextEncoder().encode(str)) bin += String.fromCharCode(b);
-  return btoa(bin);
-}
-function fromBase64(b64) {
-  const bin = atob(String(b64).replace(/\s/g, ''));
-  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-}
-
-class SyncError extends Error {
-  constructor(status, message) {
-    super(message);
-    this.status = status;
-  }
-}
-
-async function github(method, body) {
-  let res;
-  try {
-    res = await fetch(`https://api.github.com/repos/${sync.repo}/contents/${SYNC_PATH}`, {
-      method,
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${sync.token}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-      // Let a save finish even if the app is closed right after it.
-      keepalive: method === 'PUT',
-    });
-  } catch {
-    throw new SyncError(0, 'offline');
-  }
-  return res;
-}
-
-/** Current file on GitHub: { sha, text } (both null if it doesn't exist yet). */
-async function readRemote() {
-  const res = await github('GET');
-  if (res.status === 404) {
-    // 404 also means "no access" for a token that can't see the repo.
-    const repoRes = await fetch(`https://api.github.com/repos/${sync.repo}`, {
-      headers: { Authorization: `Bearer ${sync.token}`, Accept: 'application/vnd.github+json' },
-      cache: 'no-store',
-    }).catch(() => null);
-    if (!repoRes || !repoRes.ok) throw new SyncError(404, `can't see ${sync.repo} — check the repository name and the token's repository access`);
-    return { sha: null, text: null };
-  }
-  if (!res.ok) throw httpError(res.status);
-  const data = await res.json();
-  return { sha: data.sha, text: fromBase64(data.content) };
-}
-
-function httpError(status) {
-  if (status === 401) return new SyncError(status, 'token rejected — paste a new one in Widget sync');
-  if (status === 403) return new SyncError(status, "the token can't write to the repo — give it Contents: Read and write");
-  return new SyncError(status, `GitHub error ${status}`);
-}
-
-async function pushFile() {
-  const body = itemsFile();
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const { sha, text } = await readRemote();
-    if (text === body) return; // already up to date
-    const res = await github('PUT', {
-      message: 'Update years from Years app',
-      content: toBase64(body),
-      ...(sha ? { sha } : {}),
-    });
-    if (res.ok) return;
-    if ((res.status === 409 || res.status === 422) && attempt === 0) continue; // changed meanwhile: retry once
-    throw httpError(res.status);
-  }
-}
-
-function requestSync() {
-  if (!syncOn()) return;
-  sync.dirty = true;
-  saveSync();
-  runSync();
-}
-
-async function runSync() {
-  if (!syncOn() || !sync.dirty) return showSyncStatus();
-  if (syncRunning) {
-    syncQueued = true;
-    return;
-  }
-  if (!navigator.onLine) return showSyncStatus('offline');
-  syncRunning = true;
-  showSyncStatus('syncing');
-  try {
-    sync.dirty = false; // edits made while pushing set it again
-    await pushFile();
-    sync.lastSynced = Date.now();
-    saveSync();
-    showSyncStatus();
-  } catch (e) {
-    sync.dirty = true;
-    saveSync();
-    showSyncStatus(e.status === 0 ? 'offline' : 'error', e.message);
-  } finally {
-    syncRunning = false;
-    if (syncQueued) {
-      syncQueued = false;
-      runSync();
-    }
-  }
-}
-
-const fmtTime = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-
-function showSyncStatus(state, message) {
-  const box = $('sync-status');
-  $('sync-btn').classList.toggle('on', syncOn());
-  box.hidden = !syncOn();
-  box.classList.toggle('error', state === 'error');
-  $('sync-retry').hidden = state !== 'error' && state !== 'offline';
-  if (!syncOn()) return;
-  if (state === 'syncing') $('sync-text').textContent = 'Syncing widget…';
-  else if (state === 'offline') $('sync-text').textContent = 'Offline · the widget will update when you are back online.';
-  else if (state === 'error') $('sync-text').textContent = `Widget sync failed: ${message}.`;
-  else if (sync.dirty) $('sync-text').textContent = 'Widget sync pending…';
-  else if (sync.lastSynced) $('sync-text').textContent = `Widget synced ✓ ${fmtTime.format(sync.lastSynced)}`;
-  else $('sync-text').textContent = 'Widget sync on';
-}
-
-/** First connect: bring in items that exist only on GitHub (matched by name). */
-function importRemote(text) {
-  const have = new Set(items.map((t) => t.name.trim().toLowerCase()));
-  let added = 0;
-  const iso = /^\d{4}-\d{2}-\d{2}$/;
-  for (const e of parseCountdowns(text)) {
-    if (!e || !e.name || !iso.test(e.start || '') || !iso.test(e.end || '') || e.end <= e.start) continue;
-    if (have.has(String(e.name).trim().toLowerCase())) continue;
-    items.push({
-      id: uid(),
-      createdAt: Date.now(),
-      kind: e.kind === 'goal' ? 'goal' : 'life',
-      name: String(e.name).slice(0, 60),
-      start: e.start,
-      end: e.end,
-      color: /^#[0-9a-f]{6}$/i.test(e.color || '') ? e.color : COLORS[items.length % COLORS.length],
-    });
-    have.add(String(e.name).trim().toLowerCase());
-    added++;
-  }
-  return added;
-}
-
-function openSyncSheet() {
-  $('s-repo').value = sync.repo || DEFAULT_REPO;
-  $('s-token').value = sync.token || '';
-  $('sync-off').hidden = !syncOn();
-  $('s-hint').textContent = 'The token is stored only in this app on this phone.';
-  syncDialog.showModal();
-}
-
-$('sync-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const repo = $('s-repo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\/+$/, '');
-  const token = $('s-token').value.trim();
-  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return ($('s-hint').textContent = 'Repository should look like owner/repo.');
-  if (!token) return ($('s-hint').textContent = 'Paste your GitHub token.');
-  const wasOn = syncOn() && sync.repo === repo;
-  const previous = sync;
-  sync = { ...sync, repo, token, off: false };
-  $('sync-save').disabled = true;
-  $('s-hint').textContent = 'Connecting…';
-  try {
-    const { text } = await readRemote();
-    let added = 0;
-    if (!wasOn && text) {
-      added = importRemote(text);
-      if (added) {
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-        } catch {
-          /* in memory */
-        }
-      }
-    }
-    sync.dirty = true;
-    saveSync();
-    syncDialog.close();
-    route();
-    await runSync();
-    if (added) $('sync-text').textContent += ` · added ${added} from GitHub`;
-  } catch (err) {
-    sync = previous; // keep the old settings until a working token is saved
-    $('s-hint').textContent = `Couldn't connect: ${err.message}.`;
-  } finally {
-    $('sync-save').disabled = false;
-  }
-});
-$('sync-off').addEventListener('click', () => {
-  sync = { repo: sync.repo, off: true };
-  saveSync();
-  syncDialog.close();
-  showSyncStatus();
-});
-$('sync-cancel').addEventListener('click', () => syncDialog.close());
-syncDialog.addEventListener('click', (e) => {
-  if (e.target === syncDialog) syncDialog.close();
-});
-$('sync-btn').addEventListener('click', openSyncSheet);
-$('sync-retry').addEventListener('click', () => {
-  sync.dirty = true;
-  runSync();
-});
-window.addEventListener('online', () => runSync());
-// Leaving the app: push anything unsynced now. Coming back: retry what's pending.
-document.addEventListener('visibilitychange', () => runSync());
-window.addEventListener('pagehide', () => runSync());
-
 /* ---------- Home-screen widget (Scriptable) ---------- */
 
 const widgetDialog = $('widget-dialog');
 
+/** The line pasted into the widget's Parameter field. */
+function widgetParam(item) {
+  return [item.kind, item.name.replace(/\|/g, '/'), item.start, item.end, item.color].join('|');
+}
+
 let widgetScript = '';
 function loadWidgetScript() {
   if (widgetScript) return;
-  fetch('widget/loader.js')
+  fetch('widget/years-widget.js')
     .then((res) => (res.ok ? res.text() : Promise.reject(res.status)))
     .then((text) => {
       widgetScript = text;
-      $('copy-script').textContent = 'Copy widget loader';
+      $('copy-script').textContent = 'Copy widget script';
     })
     .catch(() => ($('copy-script').textContent = 'Could not load script'));
 }
@@ -837,9 +554,7 @@ function copyText(text, btn) {
 $('widget-btn').addEventListener('click', () => {
   const item = items.find((t) => t.id === openId);
   if (!item) return;
-  $('widget-param').textContent = item.name;
-  $('sync-step-on').hidden = !syncOn();
-  $('sync-step-off').hidden = syncOn();
+  $('widget-param').textContent = widgetParam(item);
   loadWidgetScript();
   widgetDialog.showModal();
 });
@@ -848,10 +563,6 @@ $('copy-script').addEventListener('click', (e) => {
   // Copy synchronously inside the tap — iOS rejects clipboard writes after an await.
   if (widgetScript) copyText(widgetScript, e.currentTarget);
   else e.currentTarget.textContent = 'Loading… tap again';
-});
-$('open-sync').addEventListener('click', () => {
-  widgetDialog.close();
-  openSyncSheet();
 });
 $('widget-close').addEventListener('click', () => widgetDialog.close());
 widgetDialog.addEventListener('click', (e) => {
@@ -912,7 +623,6 @@ window.addEventListener('resize', () => {
 /* ---------- Boot ---------- */
 
 route();
-runSync(); // push anything changed while offline (or first time with a Dots token)
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', () => {
