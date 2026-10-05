@@ -780,7 +780,7 @@ const widgetDialog = $('widget-dialog');
 let widgetScript = '';
 function loadWidgetScript() {
   if (widgetScript) return;
-  fetch('widget/loader.js')
+  fetch('../widget/loader.js')
     .then((res) => (res.ok ? res.text() : Promise.reject(res.status)))
     .then((text) => {
       widgetScript = text;
