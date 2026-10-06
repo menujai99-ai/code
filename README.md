@@ -75,9 +75,9 @@ Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/
 
 ## Stash — save money, earn rewards
 
-A third app in [`save/`](save/), same look, for **building a saving habit**:
+A third app in [`save/`](save/), with its own banknote-and-gold look, for **building a saving habit**:
 
-- **Goals as dots.** Give a goal a target (and optionally a date). Each dot is a round amount (e.g. $20), and dots fill as you save. With a date you get a weekly pace and an on-track / behind line. Without one, you get an estimate of when you'll finish.
+- **Goals as coins.** Give a goal a target (and optionally a date). Each coin is a round amount (e.g. $20). Saved coins drop into a tray in the goal's metal (gold, emerald, sapphire…), the current one fills up from the bottom, and the rest are empty slots. With a date you get a weekly pace and an on-track / behind line. Without one, you get an estimate of when you'll finish.
 - **Bigger intentions, bigger rewards.** Every goal has a tier set by its size: 🌱 Small step ×1, 🌿 Solid ×1.5, 🌳 Big ×2, 🏔️ Huge ×3. The multiplier applies to XP on every save. Bigger goals also pay bigger 25/50/75/100% milestone bonuses and a bigger **treat budget** (2–5% of the goal) for the reward you choose. Set what counts as "big" for you in Settings.
 - **XP, levels and badges.** Level up from Seedling Saver to Legend of Thrift. Badges for streaks, skipping purchases, halfway, finishing a Big or Huge goal and more. New ones show up with confetti.
 - **I skipped a buy.** Didn't buy the coffee? Log it, and the money goes to a goal.

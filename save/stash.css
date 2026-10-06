@@ -1,95 +1,322 @@
-/* Stash additions on top of the shared Dots/Years styles. */
-:root { --accent: #2f9e44; --gold: #f08c00; }
+/* =========================================================
+ * Stash look: warm paper, deep emerald banknotes, gold.
+ * Layered on top of the shared Dots/Years base styles.
+ * ========================================================= */
+:root {
+  --bg: #f5f0e6;
+  --surface: #fffcf5;
+  --surface-2: #efe8d8;
+  --text: #18241f;
+  --muted: #6d7368;
+  --line: #e2d9c5;
+  --accent: #0f6b4a;
+  --gold: #c9971c;
+  --gold-hi: #f6d77a;
+  --danger: #b4323f;
+  --note: #0f6b4a;
+  --radius: 22px;
+  --shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, 0 1px 2px rgba(60, 45, 10, 0.06), 0 10px 30px -12px rgba(60, 45, 10, 0.18);
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, ui-serif, serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b1310;
+    --surface: #121d18;
+    --surface-2: #1a2822;
+    --text: #ece6d6;
+    --muted: #97a196;
+    --line: #26352e;
+    --accent: #2fa577;
+    --gold: #e0b34a;
+    --danger: #e0697a;
+    --note: #0d5a3f;
+    --shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  }
+}
 
-.section { font-size: 18px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
-.section small { font-size: 13px; font-weight: 500; }
-.empty { margin: 0; padding: 20px 8px; }
-.empty h3 { margin: 18px 0 6px; font-size: 20px; }
+body {
+  background:
+    radial-gradient(120% 60% at 50% -10%, color-mix(in srgb, var(--gold) 10%, transparent), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
 
-/* Level card */
-.level-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-top: 8px; --c: var(--gold); }
-.level-row { display: flex; align-items: center; gap: 12px; }
+/* ---------- Type ---------- */
+.topbar h1 { font-family: var(--serif); font-weight: 700; font-size: 32px; letter-spacing: -0.01em; }
+#detail-view .topbar h1 { font-size: 21px; }
+.section { font-family: var(--serif); font-size: 21px; font-weight: 700; margin: 30px 0 12px; display: flex; align-items: baseline; gap: 8px; }
+.section small { font-family: system-ui, sans-serif; font-size: 13px; font-weight: 500; }
+.big-num { font-family: var(--serif); font-weight: 700; letter-spacing: -0.02em; }
+.card-left { font-family: var(--serif); }
+
+/* ---------- Buttons ---------- */
+.icon-btn { background: var(--surface); box-shadow: var(--shadow); }
+.icon-btn.primary, .btn.primary { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent)); color: #fff; box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.btn { background: var(--surface); box-shadow: var(--shadow); }
+.btn.danger { box-shadow: none; }
+.btn.ghost { background: transparent; box-shadow: none; border: 1.5px dashed var(--line); color: var(--muted); width: 100%; margin-top: 10px; }
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+
+/* ---------- Banknote cards (level card + goal hero) ---------- */
+.level-card, .hero {
+  --ink: #f8f1dc;
+  position: relative;
+  overflow: hidden;
+  color: var(--ink);
+  border-radius: var(--radius);
+  padding: 18px;
+  margin-top: 8px;
+  background:
+    repeating-radial-gradient(circle at 110% -20%, transparent 0 9px, rgba(255, 255, 255, 0.045) 9px 10px),
+    repeating-radial-gradient(circle at -20% 130%, transparent 0 7px, rgba(255, 255, 255, 0.035) 7px 8px),
+    linear-gradient(135deg, color-mix(in srgb, var(--n) 88%, white 4%), color-mix(in srgb, var(--n) 55%, #04100b));
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset, 0 18px 40px -18px color-mix(in srgb, var(--n) 80%, black);
+}
+.level-card { --n: var(--note); }
+.hero { --n: var(--note); }
+/* The goal's own metal shows as a thin band along the top of its note. */
+.hero { border-top: 4px solid var(--c); }
+/* Inner engraved border, like the edge of a note. */
+.level-card::before, .hero::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: calc(var(--radius) - 6px);
+  pointer-events: none;
+}
+.level-card .muted, .hero .day-of, .hero .big-label { color: color-mix(in srgb, var(--ink) 72%, transparent); }
+.hero .big-num { color: var(--ink); text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); }
+.level-card .progress, .hero .progress { background: rgba(0, 0, 0, 0.22); }
+.level-card .progress-fill, .hero .progress-fill { background: linear-gradient(90deg, var(--gold), var(--gold-hi)); }
+.hero .timer, .stats > div { background: rgba(255, 255, 255, 0.09); border: 1px solid rgba(255, 255, 255, 0.08); }
+.hero .timer-label, .stats .timer-label { color: color-mix(in srgb, var(--ink) 65%, transparent); }
+.track { margin-top: 12px; font-size: 14px; font-weight: 600; }
+.track.good { color: #b9f0d2; }
+.track.behind { color: #ffc9cf; }
+
+.level-row { display: flex; align-items: center; gap: 12px; position: relative; }
 .level-badge {
-  width: 48px; height: 48px; flex: none; border-radius: 50%;
-  display: grid; place-items: center; font-weight: 800; font-size: 20px;
-  color: #fff; background: radial-gradient(circle at 30% 30%, #ffc94d, var(--gold));
+  width: 52px; height: 52px; flex: none; border-radius: 50%;
+  display: grid; place-items: center;
+  font: 700 22px/1 var(--serif); color: #5a3d00;
+  background: radial-gradient(circle at 32% 28%, #fff4c7 0 10%, var(--gold-hi) 30%, #d9a531 62%, #8f640c 100%);
+  box-shadow: inset 0 0 0 3px #e7bd50, inset 0 0 0 4px #9a6c0c, 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .level-text { display: flex; flex-direction: column; min-width: 0; }
-.level-text b { font-size: 17px; }
+.level-text b { font: 700 19px/1.2 var(--serif); }
 .level-text small { font-size: 13px; }
-.level-card .progress { margin-top: 12px; }
+.level-card .progress { margin-top: 14px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
-.stats > div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; min-width: 0; }
-.stats b { display: block; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats > div { border-radius: 12px; padding: 8px 10px; min-width: 0; }
+.stats b { display: block; font: 700 18px/1.3 var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
-.btn.ghost { background: transparent; border: 1.5px dashed var(--line); color: var(--muted); width: 100%; margin-top: 10px; }
-
+/* ---------- Goal cards ---------- */
+.task-card { border: 1px solid var(--line); padding: 16px 16px 14px; }
+.card-name { font-weight: 650; }
+.card-left { color: color-mix(in srgb, var(--c) 85%, var(--text)); }
 .card-tag {
   font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
-  color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: color-mix(in srgb, var(--c) 80%, var(--text)); background: color-mix(in srgb, var(--c) 13%, transparent);
   padding: 2px 7px; border-radius: 999px; margin-right: 6px; vertical-align: 2px; white-space: nowrap;
 }
+.card-strip { gap: 3px; margin-top: 12px; }
 
-/* Want list */
-.want-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.want { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
-.want-head { display: flex; align-items: baseline; gap: 10px; }
-.want-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.want-timer { color: var(--muted); font-size: 14px; margin-top: 2px; }
-.want-timer.ready { color: var(--accent); font-weight: 600; }
-.want .progress { height: 4px; margin-top: 10px; --c: var(--muted); }
-.want-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+/* ---------- Coins ---------- */
+/* Shared metal: a lit face, an engraved rim and a soft drop shadow, all from --c. */
+.coin.full, .card-strip i.on, .empty-dots i.on, .swatches label {
+  background:
+    radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--c) 25%, white) 0 9%, transparent 34%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c) 82%, white) 0 54%, color-mix(in srgb, var(--c) 72%, black) 100%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, black),
+    inset 0 0 0 calc(var(--size, 8px) * 0.11) color-mix(in srgb, var(--c) 92%, white),
+    inset 0 0 0 calc(var(--size, 8px) * 0.11 + 1px) color-mix(in srgb, var(--c) 55%, black),
+    0 1px 2px rgba(0, 0, 0, 0.28);
+}
 
-/* Badges */
-.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
-.badge { background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); padding: 12px 8px; text-align: center; font-size: 12px; }
-.badge .b-icon { font-size: 26px; display: block; }
-.badge b { display: block; font-size: 12.5px; margin-top: 4px; }
-.badge small { color: var(--muted); display: block; margin-top: 2px; line-height: 1.25; }
-.badge.locked .b-icon { filter: grayscale(1); opacity: 0.35; }
-.badge.locked b { color: var(--muted); }
+.dot-grid {
+  --size: 22px;
+  --gap: 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap);
+  color: var(--c);
+  perspective: 600px;
+}
+.coin-row { display: flex; gap: var(--gap); }
+.coin-row.odd { padding-left: calc((var(--size) + var(--gap)) / 2); }
 
-/* Detail */
-.track { margin-top: 12px; font-size: 14px; font-weight: 600; }
-.track.good { color: var(--accent); }
-.track.behind { color: var(--danger); }
-.reward-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-top: 14px; }
+.coin {
+  display: block;
+  flex: none;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  position: relative;
+  cursor: pointer;
+  background: none;
+}
+/* Bigger, invisible hit area so small coins stay easy to tap. */
+.coin::after { content: ""; position: absolute; inset: calc(var(--gap, 4px) / -2); border-radius: 50%; }
+/* A diagonal glint across saved coins. */
+.coin.full::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: linear-gradient(120deg, transparent 38%, rgba(255, 255, 255, 0.55) 48%, transparent 58%);
+  background-size: 260% 260%;
+  background-position: 100% 100%;
+  opacity: 0.9;
+}
+.coin.slot {
+  border: 1.5px dashed color-mix(in srgb, var(--c) 38%, var(--line));
+  background: color-mix(in srgb, var(--c) 5%, transparent);
+}
+/* The coin being saved right now fills from the bottom like a jar. */
+.coin.filling {
+  --p: 0;
+  background:
+    linear-gradient(to top,
+      color-mix(in srgb, var(--c) 85%, white) 0 calc(var(--p) * 100%),
+      color-mix(in srgb, var(--c) 10%, transparent) calc(var(--p) * 100%));
+  box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent);
+  animation: breathe 2.6s ease-in-out infinite;
+}
+.coin.drop { animation: drop 0.6s cubic-bezier(0.3, 1.5, 0.55, 1) both; animation-delay: var(--d, 0ms); }
+.coin.drop::before { animation: glint 1.2s ease-out both; animation-delay: calc(var(--d, 0ms) + 0.35s); }
+.coin.flip { animation: flip 0.7s ease; }
+.coin.flip::before { animation: glint 0.9s ease-out; }
+.coin:active { transform: scale(0.88); }
+
+@keyframes drop {
+  0% { transform: translateY(-70px) scale(0.7); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes flip {
+  from { transform: rotateY(0); }
+  to { transform: rotateY(360deg); }
+}
+@keyframes glint {
+  from { background-position: 100% 100%; }
+  to { background-position: 0 0; }
+}
+@keyframes breathe {
+  0%, 100% { box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+  50% { box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 7px color-mix(in srgb, var(--c) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coin.filling, .coin.drop, .coin.flip, .coin.drop::before, .coin.flip::before { animation: none; }
+}
+
+/* Coin tray */
+.grid-wrap {
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--goal, var(--accent)) 7%, transparent), transparent 70%),
+    var(--surface);
+  padding: 26px 16px 18px;
+}
+.legend { margin-top: 22px; }
+.legend .coin { --size: 12px; cursor: default; animation: none; }
+.legend .coin.filling { --p: 0.5; box-shadow: inset 0 0 0 1.5px var(--c); }
+.legend .coin::after { display: none; }
+
+/* Mini coins on goal cards and the empty state */
+.card-strip i, .empty-dots i {
+  --size: 8px;
+  width: var(--size); height: var(--size); border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--c) 40%, var(--line));
+  background: none;
+}
+.card-strip i.on, .empty-dots i.on { border: 0; }
+.card-strip i.now, .empty-dots i.now { border: 1px solid var(--c); background: linear-gradient(to top, var(--c) 50%, transparent 50%); }
+.empty-dots { grid-template-columns: repeat(7, 16px); gap: 8px; }
+.empty-dots i { --c: var(--gold); --size: 16px; }
+.empty { margin: 0; padding: 20px 8px; }
+.empty h3 { margin: 18px 0 6px; font: 700 21px/1.2 var(--serif); }
+
+/* ---------- Detail extras ---------- */
+#detail-view { --goal: var(--c); }
+.reward-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-top: 14px; }
 .reward-head { display: flex; align-items: center; gap: 12px; }
 .reward-head div { display: flex; flex-direction: column; }
-.tier-icon { font-size: 32px; }
-.treat { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 12%, transparent); font-size: 14px; }
-.treat.won { background: color-mix(in srgb, var(--accent) 16%, transparent); font-weight: 600; }
+.reward-head b { font: 700 17px/1.25 var(--serif); }
+.tier-icon {
+  font-size: 26px; width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: color-mix(in srgb, var(--gold) 14%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 45%, transparent);
+}
+.treat {
+  margin-top: 12px; padding: 11px 13px; border-radius: 14px; font-size: 14px;
+  background: color-mix(in srgb, var(--gold) 11%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--gold) 55%, transparent);
+}
+.treat.won { background: color-mix(in srgb, var(--accent) 14%, transparent); border-style: solid; border-color: color-mix(in srgb, var(--accent) 45%, transparent); font-weight: 600; }
 .milestones { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.milestones li { text-align: center; font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 10px; padding: 8px 4px; }
-.milestones li b { display: block; font-size: 15px; color: var(--text); }
-.milestones li.hit { background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--text); }
+.milestones li { text-align: center; font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 12px; padding: 8px 4px; }
+.milestones li b { display: block; font: 700 16px/1.3 var(--serif); color: var(--text); }
+.milestones li.hit { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--text); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gold) 55%, transparent); }
+.milestones li.hit b::after { content: " ✓"; color: var(--gold); }
 
-.history { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); }
+.history { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .history li { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--line); }
 .history li:first-child { border-top: 0; }
 .history .h-text { flex: 1; min-width: 0; }
 .history .h-text small { display: block; color: var(--muted); font-size: 12.5px; }
-.history .h-amt { font-weight: 700; }
+.history .h-amt { font: 700 16px/1.2 var(--serif); color: var(--accent); }
 .history .h-amt.neg { color: var(--danger); }
 .history .h-del { background: none; border: 0; color: var(--muted); font-size: 18px; cursor: pointer; padding: 4px 6px; }
 .history .empty-row { color: var(--muted); justify-content: center; }
 
-/* Sheets */
+/* ---------- Want list ---------- */
+.want-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.want { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+.want-head { display: flex; align-items: baseline; gap: 10px; }
+.want-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.want-head .mono { font: 700 16px/1.2 var(--serif); }
+.want-timer { color: var(--muted); font-size: 14px; margin-top: 2px; }
+.want-timer.ready { color: var(--accent); font-weight: 600; }
+.want .progress { height: 4px; margin-top: 10px; }
+.want .progress-fill { background: linear-gradient(90deg, var(--gold), var(--gold-hi)); }
+.want-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+/* ---------- Badges: gold medals ---------- */
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(98px, 1fr)); gap: 10px; }
+.badge { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 14px 8px 12px; text-align: center; font-size: 12px; }
+.badge .b-icon {
+  font-size: 22px; width: 46px; height: 46px; margin: 0 auto; display: grid; place-items: center; border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, #fff4c7 0 10%, var(--gold-hi) 32%, #d9a531 64%, #8f640c 100%);
+  box-shadow: inset 0 0 0 2.5px #e7bd50, inset 0 0 0 3.5px #9a6c0c, 0 3px 8px rgba(0, 0, 0, 0.2);
+}
+.badge b { display: block; font-size: 12.5px; margin-top: 8px; }
+.badge small { color: var(--muted); display: block; margin-top: 2px; line-height: 1.25; }
+.badge.locked .b-icon { background: var(--surface-2); box-shadow: inset 0 0 0 1.5px var(--line); filter: grayscale(1); opacity: 0.45; }
+.badge.locked b { color: var(--muted); }
+
+/* ---------- Sheets ---------- */
+.sheet { background: var(--surface); }
+.sheet h2 { font: 700 24px/1.2 var(--serif); }
 .sheet p.muted { margin: -6px 0 14px; font-size: 14px; }
 .field span small { font-weight: 500; }
 .field select { -webkit-appearance: auto; appearance: auto; }
+.field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .segmented.three { grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; }
 .segmented.three label { padding: 8px 4px; font-size: 13px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
-.chips button { font: inherit; font-size: 13px; font-weight: 600; border: 0; border-radius: 999px; padding: 6px 11px; background: var(--surface-2); color: var(--text); cursor: pointer; }
-.tier-preview { margin: -6px 0 14px; font-size: 13px; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); }
+.chips button { font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 6px 11px; background: var(--surface-2); color: var(--text); cursor: pointer; }
+.tier-preview { margin: -6px 0 14px; font-size: 13px; padding: 9px 12px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 11%, transparent); border: 1px dashed color-mix(in srgb, var(--gold) 50%, transparent); }
 .tier-preview:empty { display: none; }
+.swatches label { --size: 36px; }
 .actions.wrap { flex-wrap: wrap; }
 .file-btn { position: relative; overflow: hidden; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
-/* Celebration */
+/* ---------- Celebration ---------- */
 .party { text-align: center; }
 .party-icon { font-size: 56px; }
 .party h2 { margin: 6px 0 12px; }

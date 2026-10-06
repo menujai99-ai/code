@@ -1,7 +1,7 @@
 'use strict';
 
 /* =========================================================
- * Stash — save money toward goals, one dot at a time.
+ * Stash — save money toward goals, one coin at a time.
  * Every number on screen (saved, XP, level, badges, streak)
  * is derived from the stored goals + transactions, so editing
  * or deleting history always leaves everything consistent.
@@ -12,7 +12,8 @@
  * ========================================================= */
 
 const STORAGE_KEY = 'stash.v1';
-const COLORS = ['#2f9e44', '#1c7ed6', '#e8590c', '#ae3ec9', '#f08c00', '#e03131', '#0c8599', '#495057'];
+/** Coin metals: gold, emerald, sapphire, ruby, amethyst, copper, jade, silver. */
+const COLORS = ['#c9971c', '#12805c', '#2a62c9', '#c2364a', '#8a55d6', '#c0682b', '#0f8a85', '#7b8494'];
 const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
 const MAX_DOTS = 100;
@@ -316,7 +317,7 @@ function paceLine(g, st) {
       ? `${money(st.perDay)}/day for ${plural(st.daysLeft, 'day')}`
       : `${money(st.perWeek)}/week until ${fmtShort.format(parseISODate(g.deadline))}`;
   }
-  return `${money(st.saved)} of ${money(g.target)}`;
+  return `${money(st.left)} to go`;
 }
 
 /* ---------- DOM refs ---------- */
@@ -463,7 +464,7 @@ function renderDetail(now = new Date()) {
   detailView.style.setProperty('--c', g.color);
   $('big-num').textContent = money(st.saved);
   $('big-label').textContent = `of ${money(g.target)}`;
-  $('sub-line').textContent = `${Math.floor(st.pct * 100)}% · each dot is ${money(st.v)}`;
+  $('sub-line').textContent = `${Math.floor(st.pct * 100)}% · each coin is ${money(st.v)}`;
   $('progress-fill').style.width = `${(st.pct * 100).toFixed(2)}%`;
 
   const track = $('track');
@@ -518,21 +519,7 @@ function renderDetail(now = new Date()) {
     ms.append(li);
   }
 
-  // Dots
-  grid.setAttribute('aria-label', `${st.n} dots of ${money(st.v)}: ${st.filled} filled`);
-  grid.textContent = '';
-  const frag = document.createDocumentFragment();
-  for (let i = 0; i < st.n; i++) {
-    const dot = el('button');
-    dot.type = 'button';
-    dot.dataset.i = i;
-    const cls = i < st.filled ? 'past' : i === st.filled && st.frac > 0 ? 'today' : 'future';
-    dot.className = `dot ${cls}`;
-    if (cls === 'today') dot.style.setProperty('--p', st.frac.toFixed(4));
-    frag.append(dot);
-  }
-  grid.append(frag);
-  layoutGrid(st.n);
+  renderCoins(g, st);
 
   // History
   const hist = $('history');
@@ -559,33 +546,66 @@ function renderDetail(now = new Date()) {
   }
 }
 
-function dotSize(n) {
-  if (n <= 12) return 22;
-  if (n <= 30) return 18;
-  if (n <= 60) return 15;
-  return 13;
+/* ---------- Coin tray: every dot is a coin ---------- */
+
+/** Coins filled the last time each goal was drawn, so new ones can drop in. */
+const lastFilled = new Map();
+
+function coinSize(n) {
+  if (n <= 12) return 34;
+  if (n <= 30) return 26;
+  if (n <= 60) return 22;
+  return 19;
 }
-function layoutGrid(n) {
-  if (detailView.hidden) return;
-  const W = grid.clientWidth || window.innerWidth - 64;
-  const size = dotSize(n);
-  const gap = Math.round(size * 0.7);
-  const maxCols = Math.max(1, Math.floor((W + gap) / (size + gap)));
-  const want = n <= 6 ? n : n <= 20 ? 5 : 10;
+
+/** Rows of coins, every other row nudged half a coin over like a tray. */
+function renderCoins(g, st) {
+  const W = (grid.parentElement.clientWidth || window.innerWidth - 32) - 32;
+  const size = coinSize(st.n);
+  const gap = Math.round(size * 0.3);
+  const pitch = size + gap;
+  const maxCols = Math.max(1, Math.floor((W - pitch / 2 + gap) / pitch));
+  const want = st.n <= 6 ? st.n : st.n <= 20 ? 5 : 10;
   const cols = Math.max(1, Math.min(want, maxCols));
-  grid.style.setProperty('--cols', cols);
   grid.style.setProperty('--size', `${size}px`);
   grid.style.setProperty('--gap', `${gap}px`);
+  grid.setAttribute('aria-label', `${st.n} coins of ${money(st.v)}: ${st.filled} saved`);
+
+  const prev = lastFilled.has(g.id) ? lastFilled.get(g.id) : st.filled;
+  lastFilled.set(g.id, st.filled);
+  grid.textContent = '';
+  let row;
+  for (let i = 0; i < st.n; i++) {
+    if (i % cols === 0) {
+      row = el('div', `coin-row${(i / cols) % 2 ? ' odd' : ''}`);
+      if (st.n > cols) row.style.width = `${cols * pitch - gap + pitch / 2}px`;
+      grid.append(row);
+    }
+    const coin = el('button');
+    coin.type = 'button';
+    coin.dataset.i = i;
+    const cls = i < st.filled ? 'full' : i === st.filled && st.frac > 0 ? 'filling' : 'slot';
+    coin.className = `coin ${cls}`;
+    if (cls === 'filling') coin.style.setProperty('--p', st.frac.toFixed(4));
+    if (cls === 'full' && i >= prev) {
+      coin.classList.add('drop');
+      coin.style.setProperty('--d', `${Math.min(i - prev, 20) * 70}ms`);
+    }
+    row.append(coin);
+  }
 }
 
 let tipTimer = 0;
 grid.addEventListener('click', (e) => {
-  const dot = e.target.closest('.dot');
+  const dot = e.target.closest('.coin');
   const g = state.goals.find((x) => x.id === openId);
   if (!dot || !g) return;
   const i = Number(dot.dataset.i);
   const v = dotValue(g.target);
-  tip.textContent = `Dot ${i + 1} · ${money(i * v)} → ${money(Math.min(g.target, (i + 1) * v))}`;
+  dot.classList.remove('flip', 'drop');
+  void dot.offsetWidth;
+  dot.classList.add('flip');
+  tip.textContent = `Coin ${i + 1} · ${money(i * v)} → ${money(Math.min(g.target, (i + 1) * v))}`;
   const r = dot.getBoundingClientRect();
   tip.hidden = false;
   const half = tip.offsetWidth / 2;
@@ -651,12 +671,12 @@ let editingGoal = null;
 
 for (const [i, c] of COLORS.entries()) {
   const label = el('label');
-  label.style.background = c;
+  label.style.setProperty('--c', c);
   const input = el('input');
   input.type = 'radio';
   input.name = 'color';
   input.value = c;
-  input.setAttribute('aria-label', `Colour ${i + 1}`);
+  input.setAttribute('aria-label', ['Gold', 'Emerald', 'Sapphire', 'Ruby', 'Amethyst', 'Copper', 'Jade', 'Silver'][i] || `Coin ${i + 1}`);
   label.append(input, el('span'));
   $('g-colors').append(label);
 }
@@ -967,8 +987,10 @@ function confetti(count) {
   canvas.height = innerHeight * dpr;
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  const colors = ['#2f9e44', '#f08c00', '#1c7ed6', '#e03131', '#ae3ec9', '#ffd43b'];
-  const parts = Array.from({ length: count }, () => ({
+  // A shower of spinning gold coins with a little emerald and cream paper.
+  const colors = ['#0f6b4a', '#f3e7c4', '#c9971c'];
+  const parts = Array.from({ length: count }, (_, i) => ({
+    coin: i % 3 !== 0,
     x: innerWidth / 2 + (Math.random() - 0.5) * 80,
     y: innerHeight * 0.45,
     vx: (Math.random() - 0.5) * 14,
@@ -989,9 +1011,24 @@ function confetti(count) {
       p.a += p.va;
       ctx.save();
       ctx.translate(p.x, p.y);
-      ctx.rotate(p.a);
-      ctx.fillStyle = p.c;
-      ctx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2);
+      if (p.coin) {
+        const w = Math.abs(Math.cos(p.a * 2)) * p.r + 0.6;
+        const grad = ctx.createLinearGradient(-w, -p.r, w, p.r);
+        grad.addColorStop(0, '#fff1b8');
+        grad.addColorStop(0.5, '#e0ad2c');
+        grad.addColorStop(1, '#9a6c0c');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w, p.r, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(122, 82, 6, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else {
+        ctx.rotate(p.a);
+        ctx.fillStyle = p.c;
+        ctx.fillRect(-p.r / 2, -p.r / 4, p.r, p.r / 2);
+      }
       ctx.restore();
     }
     if (t - t0 < 2600) requestAnimationFrame(frame);
@@ -1027,7 +1064,7 @@ window.addEventListener('resize', () => {
   cancelAnimationFrame(resizeRaf);
   resizeRaf = requestAnimationFrame(() => {
     const g = state.goals.find((x) => x.id === openId);
-    if (g) layoutGrid(goalStatus(g).n);
+    if (g && !detailView.hidden) renderCoins(g, goalStatus(g));
   });
 });
 
@@ -1035,7 +1072,7 @@ window.addEventListener('resize', () => {
 
 (function decorateEmpty() {
   const box = document.querySelector('.empty-dots');
-  for (let i = 0; i < 21; i++) box.append(el('i', i < 9 ? 'on' : ''));
+  for (let i = 0; i < 21; i++) box.append(el('i', i < 9 ? 'on' : i === 9 ? 'now' : ''));
 })();
 
 /* ---------- Boot ---------- */

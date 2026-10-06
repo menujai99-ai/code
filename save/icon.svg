@@ -1,13 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#0f1115"/>
-  <g fill="#2f9e44">
-    <circle cx="136" cy="176" r="26"/><circle cx="216" cy="176" r="26"/><circle cx="296" cy="176" r="26"/><circle cx="376" cy="176" r="26"/>
-    <circle cx="136" cy="256" r="26"/><circle cx="216" cy="256" r="26"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#14805a"/><stop offset="1" stop-color="#06301f"/>
+    </linearGradient>
+    <radialGradient id="g" cx="0.34" cy="0.28" r="0.8">
+      <stop offset="0" stop-color="#fff4c7"/><stop offset="0.3" stop-color="#f6d77a"/>
+      <stop offset="0.65" stop-color="#d9a531"/><stop offset="1" stop-color="#8f640c"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g fill="url(#g)" stroke="#8f640c" stroke-width="5">
+    <circle cx="176" cy="196" r="54"/><circle cx="296" cy="196" r="54"/>
+    <circle cx="236" cy="300" r="54"/>
   </g>
-  <circle cx="296" cy="256" r="23" fill="none" stroke="#2f9e44" stroke-width="7"/>
-  <path d="M296 233 A23 23 0 0 1 319 256 A23 23 0 0 1 296 279 Z" fill="#2f9e44"/>
-  <g fill="#2f9e44" fill-opacity="0.22">
-    <circle cx="376" cy="256" r="26"/>
-    <circle cx="136" cy="336" r="26"/><circle cx="216" cy="336" r="26"/><circle cx="296" cy="336" r="26"/><circle cx="376" cy="336" r="26"/>
+  <g fill="none" stroke="#e7bd50" stroke-width="7">
+    <circle cx="176" cy="196" r="42"/><circle cx="296" cy="196" r="42"/><circle cx="236" cy="300" r="42"/>
   </g>
+  <circle cx="356" cy="300" r="52" fill="none" stroke="#f6d77a" stroke-width="5" stroke-dasharray="14 10" opacity="0.6"/>
 </svg>
