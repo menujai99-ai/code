@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Stash" />
-  <meta name="description" content="Save toward goals, one coin at a time, and earn rewards for bigger intentions." />
+  <meta name="description" content="Save toward goals, one jar at a time, and earn rewards for bigger intentions." />
   <title>Stash — Save Money</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
@@ -54,8 +54,8 @@
     <h2 class="section">Goals</h2>
     <ul id="goal-list" class="task-list"></ul>
     <section id="empty-state" class="empty" hidden>
-      <div class="empty-dots" aria-hidden="true"></div>
-      <h3>Every coin is money saved</h3>
+      <div id="empty-jar" class="empty-jar" aria-hidden="true"></div>
+      <h3>Fill a jar for every goal</h3>
       <p>Pick something worth saving for. Bigger goals earn more XP and a bigger treat.</p>
       <button id="empty-add-btn" class="btn primary">Create my first goal</button>
     </section>
@@ -100,6 +100,11 @@
       <div id="track" class="track"></div>
     </section>
 
+    <section class="jar-wrap">
+      <div id="jar-box" class="jar-box" role="img"></div>
+      <p id="jar-next" class="jar-next"></p>
+    </section>
+
     <div class="quick">
       <button id="detail-add" class="btn primary">+ Add money</button>
       <button id="detail-take" class="btn">Take out</button>
@@ -117,18 +122,9 @@
       <ol id="milestones" class="milestones"></ol>
     </section>
 
-    <section class="grid-wrap">
-      <div id="dot-grid" class="dot-grid" role="img"></div>
-      <div class="legend">
-        <span><i class="coin full"></i>Saved</span>
-        <span><i class="coin filling"></i>Filling</span>
-        <span><i class="coin slot"></i>To go</span>
-      </div>
-    </section>
 
     <h2 class="section">History</h2>
     <ul id="history" class="history"></ul>
-    <div id="dot-tip" class="dot-tip" hidden></div>
   </main>
 
   <!-- Goal sheet -->
@@ -153,7 +149,7 @@
         <input id="g-treat" type="text" maxlength="80" placeholder="e.g. Nice dinner out" />
       </label>
       <fieldset class="field">
-        <legend>Coin</legend>
+        <legend>Colour</legend>
         <div id="g-colors" class="swatches"></div>
       </fieldset>
       <small id="g-hint" class="hint"></small>

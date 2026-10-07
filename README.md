@@ -77,7 +77,7 @@ Once GitHub Pages is on, it lives at `https://menujai99-ai.github.io/code/years/
 
 A third app in [`save/`](save/), with its own banknote-and-gold look, for **building a saving habit**:
 
-- **Goals as coins.** Give a goal a target (and optionally a date). Each coin is a round amount (e.g. $20). Saved coins drop into a tray in the goal's metal (gold, emerald, sapphire…), the current one fills up from the bottom, and the rest are empty slots. With a date you get a weekly pace and an on-track / behind line. Without one, you get an estimate of when you'll finish.
+- **A jar for every goal.** Give a goal a target (and optionally a date). Its glass jar fills with liquid in the goal's colour, with dashed marks at 25 / 50 / 75%. Each time you save, a gold coin drops in and the level rises. Goal cards show a mini jar.
 - **Bigger intentions, bigger rewards.** Every goal has a tier set by its size: 🌱 Small step ×1, 🌿 Solid ×1.5, 🌳 Big ×2, 🏔️ Huge ×3. The multiplier applies to XP on every save. Bigger goals also pay bigger 25/50/75/100% milestone bonuses and a bigger **treat budget** (2–5% of the goal) for the reward you choose. Set what counts as "big" for you in Settings.
 - **XP, levels and badges.** Level up from Seedling Saver to Legend of Thrift. Badges for streaks, skipping purchases, halfway, finishing a Big or Huge goal and more. New ones show up with confetti.
 - **I skipped a buy.** Didn't buy the coffee? Log it, and the money goes to a goal.

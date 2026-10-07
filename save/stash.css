@@ -120,126 +120,93 @@ body {
   color: color-mix(in srgb, var(--c) 80%, var(--text)); background: color-mix(in srgb, var(--c) 13%, transparent);
   padding: 2px 7px; border-radius: 999px; margin-right: 6px; vertical-align: 2px; white-space: nowrap;
 }
-.card-strip { gap: 3px; margin-top: 12px; }
 
-/* ---------- Coins ---------- */
-/* Shared metal: a lit face, an engraved rim and a soft drop shadow, all from --c. */
-.coin.full, .card-strip i.on, .empty-dots i.on, .swatches label {
+/* ---------- The jar ---------- */
+.jar-wrap {
+  margin-top: 14px;
+  padding: 18px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  background:
+    radial-gradient(70% 60% at 50% 70%, color-mix(in srgb, var(--c) 12%, transparent), transparent 70%),
+    var(--surface);
+  text-align: center;
+}
+.jar-box { width: min(220px, 62vw); margin: 0 auto; }
+.jar { display: block; width: 100%; height: auto; overflow: visible; }
+.jar-next { margin: 10px 0 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+
+.jar-glass { fill: color-mix(in srgb, var(--c) 5%, var(--surface)); }
+.jar-rim { fill: none; stroke: color-mix(in srgb, var(--text) 22%, transparent); stroke-width: 3; }
+.jar-shine { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 7; stroke-linecap: round; }
+.jar-shine.thin { stroke-width: 4; stroke: rgba(255, 255, 255, 0.35); }
+.jar-lid { fill: var(--gold); stroke: color-mix(in srgb, var(--gold) 60%, black); stroke-width: 2; }
+.jar-lid-line { stroke: color-mix(in srgb, var(--gold) 55%, black); stroke-width: 2; opacity: 0.5; }
+.liq-top { stop-color: color-mix(in srgb, var(--c) 72%, white); }
+.liq-bottom { stop-color: color-mix(in srgb, var(--c) 82%, black); }
+.wave.back path { fill: color-mix(in srgb, var(--c) 45%, transparent); }
+.jar-level { transition: transform 1.4s cubic-bezier(0.25, 1.2, 0.4, 1); }
+.wave { animation: wave 6s linear infinite; }
+.wave.back { animation-duration: 9s; animation-direction: reverse; }
+.bubble { fill: rgba(255, 255, 255, 0.45); animation: bubble 4s ease-in infinite; }
+.bubble.b2 { animation-delay: 1.3s; }
+.bubble.b3 { animation-delay: 2.6s; }
+.jar-tick { stroke: color-mix(in srgb, var(--text) 30%, transparent); stroke-width: 2; stroke-dasharray: 3 3; }
+.jar-pct {
+  font: 700 44px var(--serif);
+  fill: var(--text);
+  paint-order: stroke;
+  stroke: color-mix(in srgb, var(--surface) 85%, transparent);
+  stroke-width: 6px;
+}
+.jar-coin {
+  fill: var(--gold);
+  stroke: color-mix(in srgb, var(--gold) 55%, black);
+  stroke-width: 3;
+  opacity: 0;
+}
+.jar-coin.falling { animation: coin-fall 1.1s cubic-bezier(0.5, 0, 0.8, 0.6) forwards; }
+
+@keyframes wave { from { transform: translateX(0); } to { transform: translateX(-100px); } }
+@keyframes bubble {
+  0% { transform: translateY(160px); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+@keyframes coin-fall {
+  0% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(var(--fall)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wave, .bubble, .jar-coin.falling { animation: none; }
+  .jar-level { transition: none; }
+}
+
+/* Mini jars on goal cards and the empty state */
+.task-card.with-jar { display: flex; align-items: center; gap: 14px; }
+.card-body { flex: 1; min-width: 0; }
+.task-list li { min-width: 0; }
+.card-name { min-width: 0; }
+.mini-jar { width: 44px; flex: none; }
+.jar.mini .jar-rim { stroke-width: 6; }
+.jar.mini .jar-shine { stroke-width: 10; }
+.jar.mini .jar-shine.thin, .jar.mini .bubble, .jar.mini .jar-coin { display: none; }
+.empty-jar { width: 96px; margin: 0 auto; --c: var(--accent); }
+
+/* Coin-styled colour swatches in the goal form */
+.swatches label {
+  --size: 36px;
   background:
     radial-gradient(circle at 32% 26%, color-mix(in srgb, var(--c) 25%, white) 0 9%, transparent 34%),
     radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--c) 82%, white) 0 54%, color-mix(in srgb, var(--c) 72%, black) 100%);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--c) 50%, black),
-    inset 0 0 0 calc(var(--size, 8px) * 0.11) color-mix(in srgb, var(--c) 92%, white),
-    inset 0 0 0 calc(var(--size, 8px) * 0.11 + 1px) color-mix(in srgb, var(--c) 55%, black),
+    inset 0 0 0 4px color-mix(in srgb, var(--c) 92%, white),
+    inset 0 0 0 5px color-mix(in srgb, var(--c) 55%, black),
     0 1px 2px rgba(0, 0, 0, 0.28);
 }
-
-.dot-grid {
-  --size: 22px;
-  --gap: 7px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--gap);
-  color: var(--c);
-  perspective: 600px;
-}
-.coin-row { display: flex; gap: var(--gap); }
-.coin-row.odd { padding-left: calc((var(--size) + var(--gap)) / 2); }
-
-.coin {
-  display: block;
-  flex: none;
-  width: var(--size);
-  height: var(--size);
-  border-radius: 50%;
-  border: 0;
-  padding: 0;
-  position: relative;
-  cursor: pointer;
-  background: none;
-}
-/* Bigger, invisible hit area so small coins stay easy to tap. */
-.coin::after { content: ""; position: absolute; inset: calc(var(--gap, 4px) / -2); border-radius: 50%; }
-/* A diagonal glint across saved coins. */
-.coin.full::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: linear-gradient(120deg, transparent 38%, rgba(255, 255, 255, 0.55) 48%, transparent 58%);
-  background-size: 260% 260%;
-  background-position: 100% 100%;
-  opacity: 0.9;
-}
-.coin.slot {
-  border: 1.5px dashed color-mix(in srgb, var(--c) 38%, var(--line));
-  background: color-mix(in srgb, var(--c) 5%, transparent);
-}
-/* The coin being saved right now fills from the bottom like a jar. */
-.coin.filling {
-  --p: 0;
-  background:
-    linear-gradient(to top,
-      color-mix(in srgb, var(--c) 85%, white) 0 calc(var(--p) * 100%),
-      color-mix(in srgb, var(--c) 10%, transparent) calc(var(--p) * 100%));
-  box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent);
-  animation: breathe 2.6s ease-in-out infinite;
-}
-.coin.drop { animation: drop 0.6s cubic-bezier(0.3, 1.5, 0.55, 1) both; animation-delay: var(--d, 0ms); }
-.coin.drop::before { animation: glint 1.2s ease-out both; animation-delay: calc(var(--d, 0ms) + 0.35s); }
-.coin.flip { animation: flip 0.7s ease; }
-.coin.flip::before { animation: glint 0.9s ease-out; }
-.coin:active { transform: scale(0.88); }
-
-@keyframes drop {
-  0% { transform: translateY(-70px) scale(0.7); opacity: 0; }
-  60% { opacity: 1; }
-  100% { transform: none; opacity: 1; }
-}
-@keyframes flip {
-  from { transform: rotateY(0); }
-  to { transform: rotateY(360deg); }
-}
-@keyframes glint {
-  from { background-position: 100% 100%; }
-  to { background-position: 0 0; }
-}
-@keyframes breathe {
-  0%, 100% { box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
-  50% { box-shadow: inset 0 0 0 1.5px var(--c), 0 0 0 7px color-mix(in srgb, var(--c) 0%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .coin.filling, .coin.drop, .coin.flip, .coin.drop::before, .coin.flip::before { animation: none; }
-}
-
-/* Coin tray */
-.grid-wrap {
-  border: 1px solid var(--line);
-  background:
-    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--goal, var(--accent)) 7%, transparent), transparent 70%),
-    var(--surface);
-  padding: 26px 16px 18px;
-}
-.legend { margin-top: 22px; }
-.legend .coin { --size: 12px; cursor: default; animation: none; }
-.legend .coin.filling { --p: 0.5; box-shadow: inset 0 0 0 1.5px var(--c); }
-.legend .coin::after { display: none; }
-
-/* Mini coins on goal cards and the empty state */
-.card-strip i, .empty-dots i {
-  --size: 8px;
-  width: var(--size); height: var(--size); border-radius: 50%;
-  border: 1px dashed color-mix(in srgb, var(--c) 40%, var(--line));
-  background: none;
-}
-.card-strip i.on, .empty-dots i.on { border: 0; }
-.card-strip i.now, .empty-dots i.now { border: 1px solid var(--c); background: linear-gradient(to top, var(--c) 50%, transparent 50%); }
-.empty-dots { grid-template-columns: repeat(7, 16px); gap: 8px; }
-.empty-dots i { --c: var(--gold); --size: 16px; }
-.empty { margin: 0; padding: 20px 8px; }
-.empty h3 { margin: 18px 0 6px; font: 700 21px/1.2 var(--serif); }
 
 /* ---------- Detail extras ---------- */
 #detail-view { --goal: var(--c); }
@@ -311,7 +278,6 @@ body {
 .chips button { font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 6px 11px; background: var(--surface-2); color: var(--text); cursor: pointer; }
 .tier-preview { margin: -6px 0 14px; font-size: 13px; padding: 9px 12px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 11%, transparent); border: 1px dashed color-mix(in srgb, var(--gold) 50%, transparent); }
 .tier-preview:empty { display: none; }
-.swatches label { --size: 36px; }
 .actions.wrap { flex-wrap: wrap; }
 .file-btn { position: relative; overflow: hidden; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

@@ -1,7 +1,7 @@
 {
   "name": "Stash — Save Money",
   "short_name": "Stash",
-  "description": "Save toward goals, one coin at a time, and earn rewards for bigger intentions.",
+  "description": "Save toward goals, one jar at a time, and earn rewards for bigger intentions.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

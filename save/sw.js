@@ -1,5 +1,5 @@
 // Offline support: cache the app shell, serve from cache, refresh in the background.
-const CACHE = 'stash-v2';
+const CACHE = 'stash-v3';
 const ASSETS = ['./', 'index.html', 'styles.css', 'stash.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

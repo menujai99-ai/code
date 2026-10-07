@@ -16,7 +16,6 @@ const STORAGE_KEY = 'stash.v1';
 const COLORS = ['#c9971c', '#12805c', '#2a62c9', '#c2364a', '#8a55d6', '#c0682b', '#0f8a85', '#7b8494'];
 const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
-const MAX_DOTS = 100;
 const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'NZD', 'SGD', 'MYR', 'PHP', 'IDR', 'THB', 'VND', 'JPY', 'KRW', 'CNY', 'HKD', 'AED', 'ZAR', 'NGN', 'KES', 'BRL', 'MXN', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'TRY'];
 const REGION_CURRENCY = {
   US: 'USD', GB: 'GBP', IN: 'INR', CA: 'CAD', AU: 'AUD', NZ: 'NZD', SG: 'SGD', MY: 'MYR', PH: 'PHP', ID: 'IDR', TH: 'THB',
@@ -267,24 +266,11 @@ function computeRewards() {
 
 /* ---------- Goal status ---------- */
 
-/** Money per dot: a friendly round amount giving at most 100 dots. */
-function dotValue(target) {
-  for (let m = 1; ; m *= 10) {
-    for (const s of m >= 10 ? [1, 2, 2.5, 5] : [1, 2, 5]) {
-      if (target / (s * m) <= MAX_DOTS) return s * m;
-    }
-  }
-}
-
 function goalStatus(g, now = new Date()) {
   const saved = savedFor(g.id);
   const left = Math.max(0, g.target - saved);
   const pct = Math.min(1, saved / g.target);
-  const v = dotValue(g.target);
-  const n = Math.ceil(g.target / v - 1e-9);
-  const filled = Math.min(n, Math.floor(saved / v + 1e-9));
-  const frac = filled < n ? (saved - filled * v) / Math.min(v, g.target - filled * v) : 0;
-  const st = { saved, left, pct, v, n, filled, frac, done: saved >= g.target };
+  const st = { saved, left, pct, done: saved >= g.target };
 
   const created = startOfDay(new Date(g.created));
   if (g.deadline) {
@@ -325,8 +311,6 @@ function paceLine(g, st) {
 const $ = (id) => document.getElementById(id);
 const listView = $('list-view');
 const detailView = $('detail-view');
-const grid = $('dot-grid');
-const tip = $('dot-tip');
 
 let openId = null;
 
@@ -370,9 +354,12 @@ function renderHome() {
     const left = el('span', 'card-left', `${Math.floor(st.pct * 100)}%`);
     head.append(name, left);
     const sub = el('div', 'card-sub', `${money(st.saved)} of ${money(g.target)} · ${paceLine(g, st)}`);
-    const strip = el('div', 'card-strip');
-    for (let i = 0; i < st.n; i++) strip.append(el('i', i < st.filled ? 'on' : i === st.filled && st.frac > 0 ? 'now' : ''));
-    btn.append(head, sub, strip);
+    const body = el('div', 'card-body');
+    body.append(head, sub);
+    const mini = el('div', 'mini-jar');
+    mini.innerHTML = jarSVG(st.pct, { mini: true });
+    btn.classList.add('with-jar');
+    btn.append(mini, body);
     li.append(btn);
     list.append(li);
   }
@@ -464,7 +451,7 @@ function renderDetail(now = new Date()) {
   detailView.style.setProperty('--c', g.color);
   $('big-num').textContent = money(st.saved);
   $('big-label').textContent = `of ${money(g.target)}`;
-  $('sub-line').textContent = `${Math.floor(st.pct * 100)}% · each coin is ${money(st.v)}`;
+  $('sub-line').textContent = `${Math.floor(st.pct * 100)}% saved`;
   $('progress-fill').style.width = `${(st.pct * 100).toFixed(2)}%`;
 
   const track = $('track');
@@ -519,7 +506,7 @@ function renderDetail(now = new Date()) {
     ms.append(li);
   }
 
-  renderCoins(g, st);
+  renderJar(g, st);
 
   // History
   const hist = $('history');
@@ -546,82 +533,98 @@ function renderDetail(now = new Date()) {
   }
 }
 
-/* ---------- Coin tray: every dot is a coin ---------- */
+/* ---------- The jar ---------- */
 
-/** Coins filled the last time each goal was drawn, so new ones can drop in. */
-const lastFilled = new Map();
+/* Glass jar in a 200 × 260 box. The liquid runs from the bottom (JAR_BOTTOM)
+ * up to the shoulder (JAR_TOP) at 100%. */
+const JAR_PATH = 'M62 34 H138 V46 C138 54 146 58 154 64 C172 78 180 96 180 120 V226 C180 244 168 254 150 254 H50 C32 254 20 244 20 226 V120 C20 96 28 78 46 64 C54 58 62 54 62 46 Z';
+const JAR_TOP = 72;
+const JAR_BOTTOM = 254;
+const WAVE = 'M0 0 Q25 -7 50 0 T100 0 T150 0 T200 0 T250 0 T300 0 T350 0 T400 0 V300 H0 Z';
+let jarSeq = 0;
 
-function coinSize(n) {
-  if (n <= 12) return 34;
-  if (n <= 30) return 26;
-  if (n <= 60) return 22;
-  return 19;
+function levelY(pct) {
+  // Leave a sliver of liquid at 0% so the jar never looks broken, and let 100% brim over the shoulder.
+  return JAR_BOTTOM - Math.max(0.025, Math.min(1, pct)) * (JAR_BOTTOM - JAR_TOP) - (pct >= 1 ? 8 : 0);
 }
 
-/** Rows of coins, every other row nudged half a coin over like a tray. */
-function renderCoins(g, st) {
-  const W = (grid.parentElement.clientWidth || window.innerWidth - 32) - 32;
-  const size = coinSize(st.n);
-  const gap = Math.round(size * 0.3);
-  const pitch = size + gap;
-  const maxCols = Math.max(1, Math.floor((W - pitch / 2 + gap) / pitch));
-  const want = st.n <= 6 ? st.n : st.n <= 20 ? 5 : 10;
-  const cols = Math.max(1, Math.min(want, maxCols));
-  grid.style.setProperty('--size', `${size}px`);
-  grid.style.setProperty('--gap', `${gap}px`);
-  grid.setAttribute('aria-label', `${st.n} coins of ${money(st.v)}: ${st.filled} saved`);
+/** The jar as an SVG string. Colour comes from --c on a parent. */
+function jarSVG(pct, { mini = false } = {}) {
+  const id = `jar${++jarSeq}`;
+  const ticks = mini
+    ? ''
+    : [0.25, 0.5, 0.75]
+        .map((q) => {
+          const y = levelY(q);
+          return `<line class="jar-tick" x1="150" x2="172" y1="${y}" y2="${y}"/>`;
+        })
+        .join('');
+  const label = mini ? '' : `<text class="jar-pct" x="100" y="176" text-anchor="middle">${Math.floor(pct * 100)}%</text>`;
+  return `<svg class="jar${mini ? ' mini' : ''}" viewBox="0 0 200 262" aria-hidden="true">
+  <defs>
+    <clipPath id="${id}-clip"><path d="${JAR_PATH}"/></clipPath>
+    <linearGradient id="${id}-liquid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" class="liq-top"/><stop offset="1" class="liq-bottom"/>
+    </linearGradient>
+  </defs>
+  <path class="jar-glass" d="${JAR_PATH}"/>
+  <g clip-path="url(#${id}-clip)">
+    <g class="jar-level" style="transform: translateY(${levelY(pct)}px)">
+      <g class="wave back"><path d="${WAVE}" transform="translate(-50 -6)"/></g>
+      <g class="wave front"><path d="${WAVE}" fill="url(#${id}-liquid)"/></g>
+      <circle class="bubble b1" cx="60" cy="60" r="4"/><circle class="bubble b2" cx="120" cy="90" r="3"/><circle class="bubble b3" cx="95" cy="40" r="2.5"/>
+    </g>
+    ${ticks}
+  </g>
+  <path class="jar-rim" d="${JAR_PATH}"/>
+  <path class="jar-shine" d="M38 118 C38 98 44 86 56 76"/>
+  <path class="jar-shine thin" d="M36 140 V200"/>
+  <rect class="jar-lid" x="54" y="12" width="92" height="24" rx="7"/>
+  <line class="jar-lid-line" x1="58" x2="142" y1="24" y2="24"/>
+  ${label}
+  <circle class="jar-coin" cx="100" cy="-20" r="13"/>
+</svg>`;
+}
 
-  const prev = lastFilled.has(g.id) ? lastFilled.get(g.id) : st.filled;
-  lastFilled.set(g.id, st.filled);
-  grid.textContent = '';
-  let row;
-  for (let i = 0; i < st.n; i++) {
-    if (i % cols === 0) {
-      row = el('div', `coin-row${(i / cols) % 2 ? ' odd' : ''}`);
-      if (st.n > cols) row.style.width = `${cols * pitch - gap + pitch / 2}px`;
-      grid.append(row);
-    }
-    const coin = el('button');
-    coin.type = 'button';
-    coin.dataset.i = i;
-    const cls = i < st.filled ? 'full' : i === st.filled && st.frac > 0 ? 'filling' : 'slot';
-    coin.className = `coin ${cls}`;
-    if (cls === 'filling') coin.style.setProperty('--p', st.frac.toFixed(4));
-    if (cls === 'full' && i >= prev) {
-      coin.classList.add('drop');
-      coin.style.setProperty('--d', `${Math.min(i - prev, 20) * 70}ms`);
-    }
-    row.append(coin);
+/** Level drawn last time per goal, so the liquid can rise and a coin can drop in. */
+const lastPct = new Map();
+
+function renderJar(g, st) {
+  const box = $('jar-box');
+  const prev = lastPct.has(g.id) ? lastPct.get(g.id) : st.pct;
+  lastPct.set(g.id, st.pct);
+  box.innerHTML = jarSVG(prev);
+  box.setAttribute('aria-label', `Jar ${Math.floor(st.pct * 100)}% full: ${money(st.saved)} of ${money(g.target)}`);
+  const svg = box.querySelector('svg');
+  const level = svg.querySelector('.jar-level');
+  const pctText = svg.querySelector('.jar-pct');
+  if (st.pct !== prev) {
+    // Let the browser paint the old level first, then animate to the new one.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        level.style.transform = `translateY(${levelY(st.pct)}px)`;
+        pctText.textContent = `${Math.floor(st.pct * 100)}%`;
+        if (st.pct > prev) {
+          const coin = svg.querySelector('.jar-coin');
+          coin.style.setProperty('--fall', `${levelY(st.pct) + 22}px`);
+          coin.classList.add('falling');
+        }
+      })
+    );
   }
-}
 
-let tipTimer = 0;
-grid.addEventListener('click', (e) => {
-  const dot = e.target.closest('.coin');
-  const g = state.goals.find((x) => x.id === openId);
-  if (!dot || !g) return;
-  const i = Number(dot.dataset.i);
-  const v = dotValue(g.target);
-  dot.classList.remove('flip', 'drop');
-  void dot.offsetWidth;
-  dot.classList.add('flip');
-  tip.textContent = `Coin ${i + 1} · ${money(i * v)} → ${money(Math.min(g.target, (i + 1) * v))}`;
-  const r = dot.getBoundingClientRect();
-  tip.hidden = false;
-  const half = tip.offsetWidth / 2;
-  tip.style.left = `${Math.min(window.innerWidth - half - 8, Math.max(half + 8, r.left + r.width / 2))}px`;
-  tip.style.top = `${r.top}px`;
-  clearTimeout(tipTimer);
-  tipTimer = setTimeout(() => (tip.hidden = true), 2200);
-});
-window.addEventListener('scroll', () => (tip.hidden = true), { passive: true });
+  // What the next milestone needs.
+  const next = [0.25, 0.5, 0.75, 1].find((q) => st.saved < g.target * q - 1e-9);
+  $('jar-next').textContent = next
+    ? `${money(g.target * next - st.saved)} to the ${next * 100}% mark (+${fmtNum.format(milestoneXP(g, next * 4))} XP)`
+    : 'Full jar — goal reached! 🎉';
+}
 
 /* ---------- Routing ---------- */
 
 function route() {
   const m = location.hash.match(/^#\/g\/(.+)$/);
   const g = m && state.goals.find((x) => x.id === m[1]);
-  tip.hidden = true;
   if (g) {
     openId = g.id;
     listView.hidden = true;
@@ -1059,21 +1062,9 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) rerender();
 });
 
-let resizeRaf = 0;
-window.addEventListener('resize', () => {
-  cancelAnimationFrame(resizeRaf);
-  resizeRaf = requestAnimationFrame(() => {
-    const g = state.goals.find((x) => x.id === openId);
-    if (g && !detailView.hidden) renderCoins(g, goalStatus(g));
-  });
-});
-
 /* ---------- Empty-state decoration ---------- */
 
-(function decorateEmpty() {
-  const box = document.querySelector('.empty-dots');
-  for (let i = 0; i < 21; i++) box.append(el('i', i < 9 ? 'on' : i === 9 ? 'now' : ''));
-})();
+$('empty-jar').innerHTML = jarSVG(0.35, { mini: true });
 
 /* ---------- Boot ---------- */
 
