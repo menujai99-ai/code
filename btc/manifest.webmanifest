@@ -1,0 +1,14 @@
+{
+  "name": "BTC Range — Bitcoin price ranges",
+  "short_name": "BTC Range",
+  "description": "Likely Bitcoin price ranges for the next hour, 4 hours, day and week.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1115",
+  "theme_color": "#0f1115",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

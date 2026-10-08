@@ -81,11 +81,24 @@ A second app in [`years/`](years/), same look as Dots, where **each dot is a yea
 
 It lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home screen separately from Dots; the two keep separate data.
 
+## BTC Range — Bitcoin price ranges
+
+A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that shows where the Bitcoin price is **likely** to be in the next **hour, 4 hours, 24 hours and 7 days**, compared with the current market price.
+
+- **The chart** works like a hand-drawn forecast: the **blue line** is the real price up to the **Today** dot, the **red candles** after it are the prediction (box = 50% range, thin line = 80% range, tick = middle estimate), and the **red dashed cone** is the 95% range. Switch between **Days** (last 30 days + next 7) and **Hours** (last 3 days + next 24 hours in 4-hour steps), and turn the 7/50/100/200-day EMA lines on or off. Tap a candle for its numbers.
+- **A card per horizon** gives the middle estimate and the 50% / 80% / 95% price ranges, plus the chance of finishing higher.
+- **What the indicators say:** EMA 7/50/100/200, golden/death cross, RSI, MACD, Bollinger %B, volume, on-balance volume and ATR, each marked bullish ▲, bearish ▼ or neutral. Funding rate, open interest, Fear & Greed, transactions per day, mempool and hashrate are added when those services can be reached.
+- **How well has it worked?** The model is replayed on recent history (using only the data it would have had) to show how often the ranges actually held and how often the up/down lean was right.
+
+**How it predicts.** A GARCH(1,1) volatility model decides how wide each range is, the real (fat-tailed) shape of past moves sets its shape, and a small logistic-regression model on the indicators gives the up/down lean, which can only shift the range a little and is pulled back to 50% when the backtest shows no edge. Everything runs in your browser on live data from Binance (or Coinbase / Kraken if Binance is blocked where you are); no account, key or server. Model tests: `node --test btc/test/*.test.mjs`.
+
+**Not financial advice.** The ranges are estimates of what is likely, not promises; the price can and does move outside them.
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.html`, `manifest.webmanifest` | Start page linking to Dots and Years |
+| `index.html`, `manifest.webmanifest` | Start page linking to Dots, Years and BTC Range |
 | `sw.js` | Retired root service worker: clears the old cache from when Dots lived at the root |
 | `dots/index.html` | Dots app shell: list view, detail view, add/edit sheet |
 | `dots/styles.css` | Mobile-first styles, light & dark mode |
@@ -98,3 +111,7 @@ It lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home
 | `years/widget/loader.js` | The script you paste into Scriptable once for Years |
 | `years/widget/years.json` | Your Years items for the widget, kept up to date by the app |
 | `dots/manifest.webmanifest`, `dots/icon.svg` | Makes Dots installable |
+| `btc/index.html`, `btc/styles.css`, `btc/app.js` | BTC Range page, chart and cards |
+| `btc/data.js` | Fetches prices and extra metrics from public APIs, with fallbacks |
+| `btc/model.js`, `btc/forecast.js` | Indicators, volatility model, direction model, backtest |
+| `btc/test/` | Model tests on simulated prices (`node --test btc/test/*.test.mjs`) |

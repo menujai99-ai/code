@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f6f5f2" media="(prefers-color-scheme: light)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BTC Range" />
+  <meta name="description" content="Likely Bitcoin price ranges for the next hour, 4 hours, day and week." />
+  <title>BTC Range</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="view">
+    <header class="topbar">
+      <a class="icon-btn" href="../" aria-label="All apps">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+      </a>
+      <h1>BTC Range</h1>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Refresh">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
+      </button>
+    </header>
+
+    <section class="hero" aria-live="polite">
+      <div class="hero-label">Bitcoin · USD</div>
+      <div id="price" class="hero-price">—</div>
+      <div class="hero-sub"><span id="change"></span><span id="volume"></span></div>
+    </section>
+
+    <div id="error" class="error card" hidden>
+      <p id="error-text"></p>
+      <button id="retry" class="btn primary small" type="button">Try again</button>
+    </div>
+
+    <section class="card chart-card">
+      <div class="chart-head">
+        <h2>BTC price</h2>
+        <div class="segmented" role="radiogroup" aria-label="Chart time scale">
+          <input type="radio" name="view" id="view-days" value="days" checked /><label for="view-days">Days</label>
+          <input type="radio" name="view" id="view-hours" value="hours" /><label for="view-hours">Hours</label>
+        </div>
+      </div>
+      <div class="ema-chips" role="group" aria-label="Show moving averages">
+        <span>EMA</span>
+        <button type="button" data-ema="7" aria-pressed="true">7</button>
+        <button type="button" data-ema="50" aria-pressed="true">50</button>
+        <button type="button" data-ema="100" aria-pressed="false">100</button>
+        <button type="button" data-ema="200" aria-pressed="false">200</button>
+        <small>days</small>
+      </div>
+      <div id="chart" class="chart loading" tabindex="0" role="img" aria-label="Bitcoin price chart with forecast">
+        <svg id="chart-svg" aria-hidden="true"></svg>
+        <div id="tip" class="tip" hidden></div>
+      </div>
+      <div class="legend">
+        <span><i class="key-line"></i>Actual price</span>
+        <span><i class="key-candle"></i>Prediction (box 50%, line 80%)</span>
+        <span><i class="key-cone"></i>95% range</span>
+        <span id="legend-ema" hidden><i class="key-ema"></i>EMA</span>
+      </div>
+      <p id="chart-caption" class="caption"></p>
+      <details class="table-view">
+        <summary>Show forecast as a table</summary>
+        <table id="path-table"></table>
+      </details>
+    </section>
+
+    <section id="cards" class="horizons" aria-label="Price ranges by horizon"></section>
+
+    <section class="card">
+      <h2>What the indicators say</h2>
+      <p id="tally" class="tally"></p>
+      <table id="why" class="rows"></table>
+    </section>
+
+    <section id="extras-card" class="card" hidden>
+      <h2>Market &amp; on-chain</h2>
+      <table id="extras" class="rows"></table>
+    </section>
+
+    <section class="card">
+      <h2>How well has it worked?</h2>
+      <p class="note">The same model replayed on recent history, using only the data it would have had at the time.</p>
+      <table id="backtest" class="grid-table"></table>
+      <p class="note">A well-calibrated model lands inside its 50%, 80% and 95% ranges about 50%, 80% and 95% of the time. <b>Direction right</b> above 50% means the up/down lean has had some edge; when it hasn't, the app leaves the lean at 50%.</p>
+    </section>
+
+    <details class="card how">
+      <summary>How it works</summary>
+      <ol>
+        <li><b>Data.</b> Up to 2,000 hourly and 1,000 daily candles (price and volume) from Binance, or Coinbase / Kraken if Binance is unavailable. Futures funding and open interest (Binance), Fear &amp; Greed (alternative.me) and on-chain activity (mempool.space, blockchain.com) when they can be reached.</li>
+        <li><b>How far it may move.</b> A GARCH(1,1) volatility model, fitted to the hourly and daily returns, forecasts how big the next moves are likely to be. Calm markets give narrow ranges; after big moves, ranges widen.</li>
+        <li><b>Shape of the range.</b> Bitcoin has more big surprises than a bell curve. The range uses the real shape of past moves, scaled to today's volatility.</li>
+        <li><b>Which way it leans.</b> A small logistic-regression model trained on the indicators (EMAs, RSI, MACD, Bollinger %B, volume, on-balance volume, recent returns) estimates the chance of finishing higher. It can only nudge the middle of the range a little, and it is pulled back to 50% when the backtest shows no edge.</li>
+        <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
+      </ol>
+      <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
+    </details>
+
+    <footer class="foot">
+      <p id="status" class="status" role="status">Loading market data…</p>
+      <p><b>Not financial advice.</b> Ranges are estimates of what is likely, not promises. Prices can and do move outside them.</p>
+    </footer>
+  </main>
+  <script type="module" src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  </script>
+</body>
+</html>
