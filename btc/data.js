@@ -182,3 +182,20 @@ export async function loadExtras() {
   });
   return out;
 }
+
+// ---------- Background updater output ----------
+// A scheduled GitHub Action runs the same model every hour and saves the
+// results on the repo's btc-data branch (see btc/scripts/update.mjs).
+
+export const BACKGROUND_URL = 'https://raw.githubusercontent.com/menujai99-ai/code/btc-data';
+
+export async function loadBackground(base = BACKGROUND_URL) {
+  const [forecast, track] = await Promise.allSettled([
+    getJSON(`${base}/forecast.json`),
+    getJSON(`${base}/track.json`),
+  ]);
+  return {
+    forecast: forecast.status === 'fulfilled' ? forecast.value : null,
+    track: track.status === 'fulfilled' ? track.value : null,
+  };
+}

@@ -28,7 +28,7 @@
     </header>
 
     <section class="hero" aria-live="polite">
-      <div class="hero-label">Bitcoin · USD</div>
+      <div class="hero-label">Bitcoin · USD <span id="live" class="live" data-state="connecting"><i aria-hidden="true"></i><span id="live-text">Connecting…</span></span></div>
       <div id="price" class="hero-price">—</div>
       <div class="hero-sub"><span id="change"></span><span id="volume"></span></div>
     </section>
@@ -91,6 +91,12 @@
       <p class="note">A well-calibrated model lands inside its 50%, 80% and 95% ranges about 50%, 80% and 95% of the time. <b>Direction right</b> above 50% means the up/down lean has had some edge; when it hasn't, the app leaves the lean at 50%.</p>
     </section>
 
+    <section id="track-card" class="card" hidden>
+      <h2>Live track record</h2>
+      <p id="track-note" class="note"></p>
+      <table id="track" class="grid-table"></table>
+    </section>
+
     <details class="card how">
       <summary>How it works</summary>
       <ol>
@@ -99,6 +105,8 @@
         <li><b>Shape of the range.</b> Bitcoin has more big surprises than a bell curve. The range uses the real shape of past moves, scaled to today's volatility.</li>
         <li><b>Which way it leans.</b> A small logistic-regression model trained on the indicators (EMAs, RSI, MACD, Bollinger %B, volume, on-balance volume, recent returns) estimates the chance of finishing higher. It can only nudge the middle of the range a little, and it is pulled back to 50% when the backtest shows no edge.</li>
         <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
+        <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, chart and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
+        <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Live track record</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
     </details>

@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve from cache, refresh in the background.
-const CACHE = 'btc-v1';
-const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'model.js', 'forecast.js', 'manifest.webmanifest', 'icon.svg'];
+const CACHE = 'btc-v2';
+const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'model.js', 'forecast.js', 'live.js', 'worker.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));

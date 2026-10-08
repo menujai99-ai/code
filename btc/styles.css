@@ -77,11 +77,25 @@ body {
 .btn.primary { background: var(--accent); color: #17181c; }
 .btn.small { padding: 7px 12px; font-size: 14px; }
 
+/* ---------- Live badge ---------- */
+.live { display: inline-flex; align-items: center; gap: 5px; margin-left: 6px; padding: 1px 8px 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 650; vertical-align: 1px; }
+.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.live[data-state="live"] { color: var(--up); }
+.live[data-state="live"] i { background: var(--up); animation: pulse 2s ease-in-out infinite; }
+.live[data-state="reconnecting"] i, .live[data-state="connecting"] i { background: #e8a200; }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--up) 45%, transparent); } 50% { box-shadow: 0 0 0 4px transparent; } }
+@media (prefers-reduced-motion: reduce) { .live[data-state="live"] i, .flash-up, .flash-down { animation: none !important; } }
+
 /* ---------- Hero price ---------- */
 .hero { text-align: center; margin: 8px 0 16px; }
 .hero-label { color: var(--muted); font-size: 14px; font-weight: 600; }
 .hero-price { font-size: 44px; font-weight: 750; letter-spacing: -0.02em; line-height: 1.1; margin: 2px 0 4px; }
 .hero-sub { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 15px; }
+.hero-price.flash-up { animation: flash-up 0.8s ease-out; }
+.hero-price.flash-down { animation: flash-down 0.8s ease-out; }
+@keyframes flash-up { from { color: var(--up); } }
+@keyframes flash-down { from { color: var(--down); } }
+body.refitting .horizons, body.refitting .chart svg { opacity: 0.6; transition: opacity 0.2s; }
 .up { color: var(--up); }
 .down { color: var(--down); }
 

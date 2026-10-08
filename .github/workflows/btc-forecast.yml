@@ -1,0 +1,52 @@
+# Runs the BTC Range model every hour, even when nobody has the app open, and
+# saves the forecast and a log of predictions to the btc-data branch. The app
+# reads them from there (raw.githubusercontent.com) for its live track record.
+name: BTC forecast
+
+on:
+  schedule:
+    - cron: '7 * * * *' # a few minutes after each hourly candle closes
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: btc-forecast
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check out the data branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin btc-data >/dev/null; then
+            git fetch --depth=1 origin btc-data:refs/remotes/origin/btc-data
+            git worktree add -B btc-data data origin/btc-data
+          else
+            git worktree add --orphan -b btc-data data
+          fi
+
+      - name: Run the model
+        run: node btc/scripts/update.mjs --out data
+
+      - name: Save the results
+        working-directory: data
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing changed"
+            exit 0
+          fi
+          git commit -q -m "BTC forecast $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push origin btc-data

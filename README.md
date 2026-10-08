@@ -90,6 +90,10 @@ A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that 
 - **What the indicators say:** EMA 7/50/100/200, golden/death cross, RSI, MACD, Bollinger %B, volume, on-balance volume and ATR, each marked bullish ▲, bearish ▼ or neutral. Funding rate, open interest, Fear & Greed, transactions per day, mempool and hashrate are added when those services can be reached.
 - **How well has it worked?** The model is replayed on recent history (using only the data it would have had) to show how often the ranges actually held and how often the up/down lean was right.
 
+**Live.** While the app is open it streams every trade over a WebSocket from Binance (falling back to Coinbase, then Kraken, then checking the price every 10 s). The price, chart and ranges move in real time, and a **● Live** badge shows the connection. When an hourly or daily candle closes, the model refits itself on the new data in the background (a Web Worker, so the page never freezes).
+
+**Background updater.** [`.github/workflows/btc-forecast.yml`](.github/workflows/btc-forecast.yml) runs [`btc/scripts/update.mjs`](btc/scripts/update.mjs) every hour on GitHub, even when nobody has the app open. It saves the forecast to the **`btc-data`** branch (`forecast.json`) and logs every prediction (`history.jsonl`). Once a prediction's time has passed it is checked against the real price (`scores.jsonl`, `track.json`), and the app shows the result as the **Live track record**. If a phone can't reach the exchanges, the app shows that background forecast instead. GitHub only runs scheduled workflows from the default branch, so the hourly job starts once this is merged to `main`. To run it straight away, use **Actions → BTC forecast → Run workflow**. Scheduled runs can be a few minutes late, and GitHub pauses them after 60 days without activity in the repo.
+
 **How it predicts.** A GARCH(1,1) volatility model decides how wide each range is, the real (fat-tailed) shape of past moves sets its shape, and a small logistic-regression model on the indicators gives the up/down lean, which can only shift the range a little and is pulled back to 50% when the backtest shows no edge. Everything runs in your browser on live data from Binance (or Coinbase / Kraken if Binance is blocked where you are); no account, key or server. Model tests: `node --test btc/test/*.test.mjs`.
 
 **Not financial advice.** The ranges are estimates of what is likely, not promises; the price can and does move outside them.
@@ -114,4 +118,6 @@ A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that 
 | `btc/index.html`, `btc/styles.css`, `btc/app.js` | BTC Range page, chart and cards |
 | `btc/data.js` | Fetches prices and extra metrics from public APIs, with fallbacks |
 | `btc/model.js`, `btc/forecast.js` | Indicators, volatility model, direction model, backtest |
+| `btc/live.js`, `btc/worker.js` | Live WebSocket feed with fallbacks; model refits off the main thread |
+| `btc/scripts/update.mjs`, `.github/workflows/btc-forecast.yml` | Hourly background forecast and live track record (saved on the `btc-data` branch) |
 | `btc/test/` | Model tests on simulated prices (`node --test btc/test/*.test.mjs`) |

@@ -3,14 +3,18 @@
 // price up to Today, red candles are the predicted path, and the red dashed
 // cone is the 95% range.
 
-import { loadMarket, loadExtras, STEP } from './data.js';
+import { loadMarket, loadExtras, loadBackground, STEP } from './data.js';
 import { ema, indicatorSnapshot } from './model.js';
 import { buildModel, forecastFrom, HORIZONS } from './forecast.js';
+import { LiveFeed, applyTick, upsertCandle } from './live.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
-const PRICE_EVERY = 60e3; // live price
-const MODEL_EVERY = 10 * 60e3; // candles + refit
+const RENDER_EVERY = 1000; // live redraws at most once a second
+const FULL_EVERY = 30 * 60e3; // full reload from the exchange, as a safety net
+const EXTRAS_EVERY = 5 * 60e3; // funding, sentiment, on-chain
+const BACKGROUND_EVERY = 15 * 60e3; // background updater results
+const AWAY_RELOAD = 5 * 60e3; // hidden longer than this: reload on return
 const EMA_KEY = 'btc.emas.v1';
 const VIEW_KEY = 'btc.view.v1';
 
@@ -27,7 +31,15 @@ const state = {
   emas: new Set(load(EMA_KEY, [7, 50])),
   lastModel: 0,
   busy: false,
+  refitting: false,
   hover: null,
+  feed: null,
+  feedState: 'connecting',
+  feedName: null,
+  lastTrade: 0,
+  shownPrice: NaN,
+  hiddenAt: 0,
+  background: null,
 };
 
 function load(key, fallback) {
@@ -82,6 +94,48 @@ function finished(candles, step, now) {
   return candles.filter((c) => c.t + step <= now);
 }
 
+// Refitting runs in a Web Worker so live updates never stall; browsers
+// without module workers fit on the main thread instead.
+let worker = null;
+let jobId = 0;
+const jobs = new Map();
+function fitModel(hourly, daily) {
+  const direct = () => new Promise((resolve, reject) => {
+    setTimeout(() => {
+      try {
+        resolve(buildModel(hourly, daily));
+      } catch (err) {
+        reject(err);
+      }
+    }, 0);
+  });
+  if (worker === null) {
+    try {
+      worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+      worker.onmessage = (e) => {
+        const job = jobs.get(e.data.id);
+        jobs.delete(e.data.id);
+        if (job) e.data.error ? job.reject(new Error(e.data.error)) : job.resolve(e.data.model);
+      };
+      worker.onerror = (e) => {
+        e.preventDefault?.();
+        worker.terminate();
+        worker = false;
+        for (const job of jobs.values()) job.fallback();
+        jobs.clear();
+      };
+    } catch {
+      worker = false;
+    }
+  }
+  if (!worker) return direct();
+  return new Promise((resolve, reject) => {
+    const id = ++jobId;
+    jobs.set(id, { resolve, reject, fallback: () => direct().then(resolve, reject) });
+    worker.postMessage({ id, hourly, daily });
+  });
+}
+
 async function refreshAll() {
   if (state.busy) return;
   state.busy = true;
@@ -90,25 +144,21 @@ async function refreshAll() {
   try {
     const market = await loadMarket();
     state.market = market;
-    state.now = Date.now();
-    state.price = market.hourly[market.hourly.length - 1].c;
+    const now = Date.now();
+    if (!(state.feedState === 'live' && state.price > 0)) state.price = market.hourly[market.hourly.length - 1].c;
     $('error').hidden = true;
-    setStatus('Calculating forecast…');
-    await new Promise((r) => setTimeout(r, 30)); // let the page paint first
-    const hourly = finished(market.hourly, HOUR, state.now);
-    const daily = finished(market.daily, DAY, state.now);
-    state.model = buildModel(hourly, daily);
+    if (!state.model) setStatus('Calculating forecast…');
+    state.model = await fitModel(finished(market.hourly, HOUR, now), finished(market.daily, DAY, now));
     state.lastModel = Date.now();
-    await refreshPrice(true);
-    loadExtras().then((extras) => {
-      state.extras = extras;
-      renderIndicators();
-    });
+    startFeed();
+    render(true);
+    refreshExtras();
   } catch (err) {
     console.warn(err);
     $('error-text').textContent = `Couldn't load Bitcoin prices. ${err.message || err}`;
     $('error').hidden = false;
-    setStatus(state.market ? 'Showing the last data loaded.' : 'No data yet.');
+    if (!state.market) showBackgroundForecast();
+    else setStatus('Showing the last data loaded.');
   } finally {
     state.busy = false;
     $('refresh').classList.remove('spin');
@@ -116,31 +166,117 @@ async function refreshAll() {
   }
 }
 
-async function refreshPrice(skipFetch = false) {
-  if (!state.market || !state.model) return;
-  if (!skipFetch) {
-    try {
-      const p = await state.market.exchange.price();
-      if (Number.isFinite(p) && p > 0) state.price = p;
-    } catch {
-      /* keep the last price */
-    }
-  }
-  state.now = Date.now();
-  liveCandle(state.market.hourly, HOUR);
-  liveCandle(state.market.daily, DAY);
-  state.forecast = forecastFrom(state.model, state.price, state.now);
-  renderAll();
+async function refreshExtras() {
+  state.extras = await loadExtras();
+  if (state.market) renderIndicators();
 }
 
-// Keep the unfinished candle in step with the live price.
-function liveCandle(candles, step) {
-  const last = candles[candles.length - 1];
-  if (last.t + step > state.now) {
-    last.c = state.price;
-    last.h = Math.max(last.h, state.price);
-    last.l = Math.min(last.l, state.price);
+async function refreshBackground() {
+  state.background = await loadBackground().catch(() => null);
+  renderTrack();
+  if (!state.market) showBackgroundForecast();
+}
+
+// ---------- Live feed ----------
+
+function startFeed() {
+  if (!state.feed) {
+    state.feed = new LiveFeed({
+      prefer: state.market.exchange.name,
+      onEvent: onLive,
+      onState: (s, name) => {
+        state.feedState = s;
+        state.feedName = name;
+        renderLive();
+      },
+      poll: async () => ({ price: await state.market.exchange.price(), source: state.market.exchange.name }),
+    });
   }
+  state.feed.start();
+}
+
+function onLive(ev) {
+  if (!state.market) return;
+  const { hourly, daily } = state.market;
+  if (ev.type === 'tick') {
+    state.price = ev.price;
+    state.lastTrade = Date.now();
+    const closedH = applyTick(hourly, HOUR, ev.price, ev.t, ev.volume || 0);
+    const closedD = applyTick(daily, DAY, ev.price, ev.t, ev.volume || 0);
+    if (closedH || closedD) scheduleRefit(true);
+  } else if (ev.type === 'kline') {
+    const series = ev.interval === '1h' ? hourly : ev.interval === '1d' ? daily : null;
+    if (!series) return;
+    const added = upsertCandle(series, ev.candle);
+    if (ev.closed || added) scheduleRefit(false);
+  }
+  scheduleRender();
+}
+
+// When a candle closes the model is refit on the new data. Ticks build the new
+// candles as they arrive; `sync` also re-reads the latest candles from the
+// exchange so the closed candle has exact values.
+let refitTimer = 0;
+let needSync = false;
+function scheduleRefit(sync) {
+  needSync ||= sync;
+  clearTimeout(refitTimer);
+  refitTimer = setTimeout(refit, 4000);
+}
+
+async function refit() {
+  if (!state.market) return;
+  if (state.refitting || state.busy) return scheduleRefit(false);
+  state.refitting = true;
+  document.body.classList.add('refitting');
+  const { hourly, daily, exchange } = state.market;
+  try {
+    if (needSync) {
+      needSync = false;
+      for (const [interval, series] of [['1h', hourly], ['1d', daily]]) {
+        try {
+          for (const c of await exchange.candles(interval, 5)) upsertCandle(series, c);
+        } catch {
+          /* keep the candles built from live trades */
+        }
+      }
+    }
+    const now = Date.now();
+    state.model = await fitModel(finished(hourly, HOUR, now), finished(daily, DAY, now));
+    state.lastModel = Date.now();
+    render(true);
+  } catch (err) {
+    console.warn('Refit failed', err);
+  } finally {
+    state.refitting = false;
+    document.body.classList.remove('refitting');
+  }
+}
+
+let renderTimer = 0;
+let lastRender = 0;
+function scheduleRender() {
+  if (renderTimer) return;
+  const wait = Math.max(0, RENDER_EVERY - (Date.now() - lastRender));
+  renderTimer = setTimeout(() => {
+    renderTimer = 0;
+    render();
+  }, wait);
+}
+
+// Once a second: keep the clock-driven parts current even when no trades
+// arrive, and close candles on time if the feed is quiet.
+function everySecond() {
+  if (document.hidden || !state.market || !state.model) return;
+  const now = Date.now();
+  const { hourly, daily } = state.market;
+  const closedH = applyTick(hourly, HOUR, state.price, now);
+  const closedD = applyTick(daily, DAY, state.price, now);
+  if (closedH || closedD) {
+    scheduleRefit(true);
+    scheduleRender();
+  }
+  renderLive();
 }
 
 function setStatus(text) {
@@ -149,23 +285,53 @@ function setStatus(text) {
 
 // ---------- Rendering ----------
 
-function renderAll() {
+function render(full = false) {
+  if (!state.market || !state.model) return;
+  lastRender = Date.now();
+  state.now = lastRender;
+  state.forecast = forecastFrom(state.model, state.price, state.now);
   renderHero();
   renderChart();
   renderPathTable();
   renderCards();
   renderIndicators();
-  renderBacktest();
-  const m = state.market;
-  setStatus(
-    `${m.exchange.name} · updated ${time(state.now)} · model fitted on ${state.model.hFit.closes.length.toLocaleString()} hourly and ${state.model.dFit.closes.length.toLocaleString()} daily candles`
-  );
+  if (full) renderBacktest();
+  renderLive();
+}
+
+function ago(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s} s ago` : `${Math.round(s / 60)} min ago`;
+}
+
+function renderLive() {
+  const badge = $('live');
+  const text = $('live-text');
+  const st = state.feedState;
+  badge.dataset.state = st;
+  text.textContent = { live: 'Live', connecting: 'Connecting…', reconnecting: 'Reconnecting…', polling: 'Every 10 s', stopped: 'Paused' }[st] || st;
+  if (!state.market || !state.model) return;
+  const parts = [];
+  if (st === 'live') parts.push(`Live · ${state.feedName}`, state.lastTrade ? `last trade ${ago(Date.now() - state.lastTrade)}` : 'waiting for a trade');
+  else if (st === 'polling') parts.push(`Live feed unavailable · checking ${state.market.exchange.name} every 10 s`);
+  else if (st === 'reconnecting') parts.push('Reconnecting to the live feed…');
+  else parts.push(state.market.exchange.name);
+  const m = state.model;
+  parts.push(`model ${state.refitting ? 'refitting…' : `refit ${time(state.lastModel)}`} on ${m.hFit.closes.length.toLocaleString()} hourly + ${m.dFit.closes.length.toLocaleString()} daily candles`);
+  setStatus(parts.join(' · '));
 }
 
 function renderHero() {
   const { hourly } = state.market;
   const price = state.price;
-  $('price').textContent = money(price);
+  const priceEl = $('price');
+  priceEl.textContent = money(price);
+  if (Number.isFinite(state.shownPrice) && price !== state.shownPrice) {
+    priceEl.classList.remove('flash-up', 'flash-down');
+    void priceEl.offsetWidth; // restart the animation
+    priceEl.classList.add(price > state.shownPrice ? 'flash-up' : 'flash-down');
+  }
+  state.shownPrice = price;
   const dayAgo = [...hourly].reverse().find((c) => c.t + HOUR <= state.now - DAY);
   const change = $('change');
   if (dayAgo) {
@@ -584,7 +750,7 @@ function setupControls() {
       state.view = input.value;
       state.hover = null;
       save(VIEW_KEY, state.view);
-      if (state.forecast) {
+      if (state.market && state.forecast) {
         renderChart();
         renderPathTable();
       }
@@ -598,7 +764,7 @@ function setupControls() {
       else state.emas.add(period);
       btn.setAttribute('aria-pressed', String(state.emas.has(period)));
       save(EMA_KEY, [...state.emas]);
-      if (state.forecast) renderChart();
+      if (state.market && state.forecast) renderChart();
     });
   }
   $('refresh').addEventListener('click', refreshAll);
@@ -606,22 +772,66 @@ function setupControls() {
   let raf = 0;
   new ResizeObserver(() => {
     cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => state.forecast && renderChart());
+    raf = requestAnimationFrame(() => state.market && state.forecast && renderChart());
   }).observe($('chart'));
 }
 
-function tick() {
-  if (document.hidden || state.busy) return;
-  if (Date.now() - state.lastModel > MODEL_EVERY) refreshAll();
-  else refreshPrice();
+// ---------- Background updater ----------
+
+function pctOf(n, d) {
+  return d ? `${Math.round((n / d) * 100)}%` : '—';
 }
+
+function renderTrack() {
+  const track = state.background?.track;
+  const card = $('track-card');
+  const rows = track ? HORIZONS.filter((hz) => track.horizons?.[hz.key]?.count) : [];
+  card.hidden = !rows.length;
+  if (!rows.length) return;
+  const head = el('tr', {}, ...['Horizon', '50% held', '80% held', '95% held', 'Direction right', 'Checked'].map((h) => el('th', {}, h)));
+  const body = rows.map((hz) => {
+    const r = track.horizons[hz.key];
+    return el('tr', {},
+      el('td', {}, hz.key),
+      el('td', {}, pctOf(r.in50, r.count)), el('td', {}, pctOf(r.in80, r.count)), el('td', {}, pctOf(r.in95, r.count)),
+      el('td', {}, pctOf(r.hits, r.called)),
+      el('td', {}, String(r.count)));
+  });
+  $('track').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
+  $('track-note').textContent =
+    `Real predictions saved every hour by the background updater since ${new Date(track.since).toLocaleDateString()}, ` +
+    `checked against the price once their time came. Last update ${when(track.updatedAt)}.`;
+}
+
+// No exchange reachable from this device: show the background job's forecast.
+function showBackgroundForecast() {
+  const f = state.background?.forecast;
+  if (!f || state.market) return;
+  state.price = f.price;
+  state.forecast = { cards: f.cards };
+  $('price').textContent = money(f.price);
+  renderCards();
+  setStatus(`Exchanges unreachable from this device · showing the background forecast from ${when(f.generatedAt)} (${f.source})`);
+}
+
+// ---------- Start ----------
 
 setupControls();
 setupChartEvents();
 refreshAll();
-setInterval(tick, PRICE_EVERY);
+refreshBackground();
+setInterval(everySecond, 1000);
+setInterval(() => !document.hidden && refreshExtras(), EXTRAS_EVERY);
+setInterval(() => !document.hidden && refreshBackground(), BACKGROUND_EVERY);
+setInterval(() => !document.hidden && refreshAll(), FULL_EVERY);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) tick();
+  if (document.hidden) {
+    state.hiddenAt = Date.now();
+    state.feed?.stop();
+    return;
+  }
+  if (Date.now() - state.hiddenAt > AWAY_RELOAD) refreshAll();
+  else if (state.feed) state.feed.start();
 });
 
 // Exposed for tests.
