@@ -130,7 +130,10 @@ async function futures() {
   const [funding, swap, history] = await Promise.all([
     getJSON(`${base}/public/funding-rate?instId=BTC-USDT-SWAP`),
     getJSON(`${base}/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP`).catch(() => null),
-    getJSON(`${base}/rubik/stat/contracts/open-interest-volume?ccy=BTC&period=1H`).catch(() => null),
+    // OKX's history endpoint blocks web pages (CORS), so only servers ask for it.
+    typeof window === 'undefined'
+      ? getJSON(`${base}/rubik/stat/contracts/open-interest-volume?ccy=BTC&period=1H`).catch(() => null)
+      : null,
   ]);
   const out = { source: 'OKX', fundingRate: +funding.data[0].fundingRate };
   const level = +swap?.data?.[0]?.oiUsd;
