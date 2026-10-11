@@ -89,6 +89,7 @@ export function summarize(scores, now) {
       in95: rows.filter((s) => s.in95).length,
       called: rows.filter((s) => s.called).length,
       hits: rows.filter((s) => s.hit).length,
+      ups: rows.filter((s) => s.actual > s.price).length, // for the "always guess up" baseline
     };
   }
   const since = scores.length ? Math.min(...scores.map((s) => s.t)) : now;

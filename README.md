@@ -85,12 +85,15 @@ It lives at `https://menujai99-ai.github.io/code/years/`. Install it to the home
 
 A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that shows where the Bitcoin price is **likely** to be in the next **hour, 4 hours, 24 hours and 7 days**, compared with the current market price.
 
-- **The chart** works like a hand-drawn forecast: the **blue line** is the real price up to the **Today** dot, the **red candles** after it are the prediction (box = 50% range, thin line = 80% range, tick = middle estimate), and the **red dashed cone** is the 95% range. Switch between **Days** (last 30 days + next 7) and **Hours** (last 3 days + next 24 hours in 4-hour steps), and turn the 7/50/100/200-day EMA lines on or off. Tap a candle for its numbers.
+- **Price card** with the figures exchange apps show: last price (green/red by its last move), 24h change, 24h high and low, and 24h volume in BTC and USD — live from the exchange's stream.
+- **Candlestick chart**, laid out like the charts on exchanges such as Binance (but in BTC Range's own colours): timeframes **15m · 1h · 4h · 1D**, plus **1m · 5m · 1W** under *More*; **MA / EMA / BOLL** on the chart and **VOL / MACD / RSI** below it; a countdown to the candle's close. **Pinch or scroll to zoom**, drag back in time (older candles load as you go), **tap a candle** for its open/high/low/close, change, range and volume, and tap **⤢** for full screen. The see-through **grey candles** after the live one are the forecast for each coming candle (box = 50% range, line = 80%) inside the **dashed amber 95% cone**; tap one for its numbers.
+- **Should I buy or sell?** An honest signal: it only leans *buy* or *sell* for a horizon when the direction model has beaten the simplest rule — always guessing whichever way prices moved more often — by at least 2 points (on its live track record once it has 30 checked predictions, otherwise on the replay) **and** currently leans at least 3 points away from 50/50. Otherwise it says *no clear edge*. It also gives the downside if you buy now (10% and 2.5% chances within 24h), the upside if you sell, and the trend vs momentum in plain words.
+- **Market Trades**: the latest trades with time, price (green = buyer took the price, red = seller) and size, live.
 - **A card per horizon** gives the middle estimate and the 50% / 80% / 95% price ranges, plus the chance of finishing higher.
 - **What the indicators say:** EMA 7/50/100/200, golden/death cross, RSI, MACD, Bollinger %B, volume, on-balance volume and ATR, each marked bullish ▲, bearish ▼ or neutral. Funding rate and open interest (OKX), Fear & Greed, transactions per day, mempool and hashrate are added when those services can be reached.
 - **How well has it worked?** The model is replayed on recent history (using only the data it would have had) to show how often the ranges actually held and how often the up/down lean was right.
 
-**Live.** While the app is open it streams every trade over a WebSocket from Binance (falling back to Coinbase, then Kraken, then checking the price every 10 s). The price, chart and ranges move in real time, and a **● Live** badge shows the connection. When an hourly or daily candle closes, the model refits itself on the new data in the background (a Web Worker, so the page never freezes).
+**Live.** While the app is open it streams every trade over a WebSocket from Binance (falling back to Coinbase, then Kraken, then checking the price every 10 s). The price, candles, Market Trades and ranges move in real time, and a **● Live** badge shows the connection. When an hourly or daily candle closes, the model refits itself on the new data in the background (a Web Worker, so the page never freezes).
 
 **Background updater.** [`.github/workflows/btc-forecast.yml`](.github/workflows/btc-forecast.yml) runs [`btc/scripts/update.mjs`](btc/scripts/update.mjs) every hour on GitHub, even when nobody has the app open. It saves the forecast to the **`btc-data`** branch (`forecast.json`) and logs every prediction (`history.jsonl`). Once a prediction's time has passed it is checked against the real price (`scores.jsonl`, `track.json`), and the app shows the result as the **Live track record**. If a phone can't reach the exchanges, the app shows that background forecast instead. GitHub only runs scheduled workflows from the default branch, so the hourly job starts once this is merged to `main`. To run it straight away, use **Actions → BTC forecast → Run workflow**. Scheduled runs can be a few minutes late, and GitHub pauses them after 60 days without activity in the repo.
 
@@ -115,9 +118,11 @@ A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that 
 | `years/widget/loader.js` | The script you paste into Scriptable once for Years |
 | `years/widget/years.json` | Your Years items for the widget, kept up to date by the app |
 | `dots/manifest.webmanifest`, `dots/icon.svg` | Makes Dots installable |
-| `btc/index.html`, `btc/styles.css`, `btc/app.js` | BTC Range page, chart and cards |
+| `btc/index.html`, `btc/styles.css`, `btc/app.js` | BTC Range page: price card, signal, trades and cards |
+| `btc/chart.js` | Candlestick chart: indicators, forecast candles and cone, zoom, tap details, full screen |
+| `btc/vendor/` | [TradingView Lightweight Charts™](https://www.tradingview.com/) 5.1.0 (Apache 2.0), unmodified, with its LICENSE and NOTICE |
 | `btc/data.js` | Fetches prices and extra metrics from public APIs, with fallbacks |
-| `btc/model.js`, `btc/forecast.js` | Indicators, volatility model, direction model, backtest |
+| `btc/model.js`, `btc/forecast.js` | Indicators, volatility model, direction model, backtest, forecast for any horizon, buy/sell signal rule |
 | `btc/live.js`, `btc/worker.js` | Live WebSocket feed with fallbacks; model refits off the main thread |
 | `btc/scripts/update.mjs`, `.github/workflows/btc-forecast.yml` | Hourly background forecast and live track record (saved on the `btc-data` branch) |
 | `btc/test/` | Model tests on simulated prices (`node --test btc/test/*.test.mjs`) |

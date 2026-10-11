@@ -2,9 +2,14 @@
 // Price candles come from the first exchange that answers; the extra metrics
 // (futures, sentiment, on-chain) are optional and simply left out if blocked.
 
-const HOUR = 3600e3;
+import { resample } from './live.js';
+
+const MINUTE = 60e3;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
-export const STEP = { '1h': HOUR, '1d': DAY };
+export const STEP = {
+  '1m': MINUTE, '5m': 5 * MINUTE, '15m': 15 * MINUTE, '1h': HOUR, '4h': 4 * HOUR, '1d': DAY, '1w': 7 * DAY,
+};
 
 async function getJSON(url, ms = 12000) {
   const ctl = new AbortController();
@@ -27,24 +32,33 @@ function tidy(candles) {
 }
 
 // ---------- Exchanges ----------
-// Each one: candles(interval, count) -> oldest-first candles with USD volume,
-// and price() -> latest trade price.
+// Each one:
+//   candles(interval, count, before?) -> up to `count` candles (oldest first)
+//     opening before `before` (ms), or the latest ones. v = volume in USD,
+//     vb = volume in BTC.
+//   trades(n) -> the latest trades, oldest first: { t, price, qty, side }
+//     where side is the taker's side ('buy' or 'sell').
+//   price() -> latest trade price.
 
 function binance(base, name) {
   return {
     name,
-    async candles(interval, count) {
+    async candles(interval, count, before) {
       let out = [];
-      let end = '';
+      let end = before ? `&endTime=${before - 1}` : '';
       while (out.length < count) {
         const limit = Math.min(1000, count - out.length);
         const rows = await getJSON(`${base}/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}${end}`);
         if (!Array.isArray(rows) || !rows.length) break;
-        out = rows.map((r) => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[7] })).concat(out);
+        out = rows.map((r) => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[7], vb: +r[5] })).concat(out);
         end = `&endTime=${rows[0][0] - 1}`;
         if (rows.length < limit) break;
       }
       return tidy(out);
+    },
+    async trades(n) {
+      const rows = await getJSON(`${base}/api/v3/aggTrades?symbol=BTCUSDT&limit=${n}`);
+      return rows.map((r) => ({ t: r.T, price: +r.p, qty: +r.q, side: r.m ? 'sell' : 'buy' }));
     },
     async price() {
       return +(await getJSON(`${base}/api/v3/ticker/price?symbol=BTCUSDT`)).price;
@@ -52,11 +66,19 @@ function binance(base, name) {
   };
 }
 
+// Coinbase has no 4h or weekly candles: those are built from 1h and 1d ones.
+const COINBASE_BUILT = { '4h': ['1h', 4], '1w': ['1d', 7] };
+
 const coinbase = {
   name: 'Coinbase',
-  async candles(interval, count) {
+  async candles(interval, count, before) {
+    if (COINBASE_BUILT[interval]) {
+      const [base, k] = COINBASE_BUILT[interval];
+      const small = await this.candles(base, (count + 1) * k, before);
+      return resample(small, STEP[interval]).slice(-count);
+    }
     const step = STEP[interval];
-    let end = Math.ceil(Date.now() / step) * step;
+    let end = before ? Math.floor((before - 1) / step) * step : Math.ceil(Date.now() / step) * step;
     const out = [];
     while (out.length < count) {
       const n = Math.min(299, count - out.length); // the API allows 300 per call
@@ -66,24 +88,43 @@ const coinbase = {
           `&start=${new Date(start).toISOString()}&end=${new Date(end).toISOString()}`
       );
       if (!Array.isArray(rows) || !rows.length) break;
-      for (const r of rows) out.push({ t: r[0] * 1000, l: r[1], h: r[2], o: r[3], c: r[4], v: r[5] * r[4] });
+      for (const r of rows) out.push({ t: r[0] * 1000, l: r[1], h: r[2], o: r[3], c: r[4], v: r[5] * r[4], vb: r[5] });
       end = start;
     }
-    return tidy(out);
+    const all = tidy(out);
+    return before ? all.filter((c) => c.t < before) : all;
+  },
+  async trades(n) {
+    const rows = await getJSON(`https://api.exchange.coinbase.com/products/BTC-USD/trades?limit=${n}`);
+    // Coinbase reports the maker's side; the taker took the other one.
+    return rows
+      .map((r) => ({ t: Date.parse(r.time), price: +r.price, qty: +r.size, side: r.side === 'sell' ? 'buy' : 'sell' }))
+      .reverse();
   },
   async price() {
     return +(await getJSON('https://api.exchange.coinbase.com/products/BTC-USD/ticker')).price;
   },
 };
 
+const KRAKEN_MINUTES = { '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440 };
+
 const kraken = {
   name: 'Kraken',
-  async candles(interval) {
-    // Kraken only returns the latest 720 candles.
-    const data = await getJSON(`https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=${interval === '1h' ? 60 : 1440}`);
+  async candles(interval, count, before) {
+    // Kraken only returns the latest 720 candles and can't page further back.
+    if (before) return [];
+    if (interval === '1w') return resample(await this.candles('1d', 720), STEP['1w']).slice(-count);
+    const data = await getJSON(`https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=${KRAKEN_MINUTES[interval]}`);
     if (data.error?.length) throw new Error(data.error.join(', '));
     const key = Object.keys(data.result).find((k) => k !== 'last');
-    return tidy(data.result[key].map((r) => ({ t: r[0] * 1000, o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[6] * +r[5] })));
+    return tidy(data.result[key].map((r) => ({
+      t: r[0] * 1000, o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[6] * +r[5], vb: +r[6],
+    }))).slice(-count);
+  },
+  async trades(n) {
+    const data = await getJSON(`https://api.kraken.com/0/public/Trades?pair=XBTUSD&count=${n}`);
+    const key = Object.keys(data.result).find((k) => k !== 'last');
+    return data.result[key].map((r) => ({ t: Math.round(r[2] * 1000), price: +r[0], qty: +r[1], side: r[3] === 's' ? 'sell' : 'buy' }));
   },
   async price() {
     const data = await getJSON('https://api.kraken.com/0/public/Ticker?pair=XBTUSD');

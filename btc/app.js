@@ -1,12 +1,14 @@
 // BTC Range app: loads market data, runs the model and draws the page.
-// The hero chart follows the original sketch: the blue line is the actual
-// price up to Today, red candles are the predicted path, and the red dashed
-// cone is the 95% range.
+// The price screen borrows its layout and metrics from exchange apps such as
+// Binance: price with 24h figures, candlestick chart with indicator tabs, and
+// live Market Trades. The forecast shows on the chart as grey ghost candles
+// inside a dashed 95% cone.
 
 import { loadMarket, loadExtras, loadBackground, STEP } from './data.js';
-import { ema, indicatorSnapshot } from './model.js';
-import { buildModel, forecastFrom, HORIZONS } from './forecast.js';
+import { indicatorSnapshot } from './model.js';
+import { buildModel, forecastFrom, forecastBars, signalFor, HORIZONS } from './forecast.js';
 import { LiveFeed, applyTick, upsertCandle } from './live.js';
+import { createBinanceChart, MAIN_KINDS, SUB_KINDS } from './chart.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -15,30 +17,55 @@ const FULL_EVERY = 30 * 60e3; // full reload from the exchange, as a safety net
 const EXTRAS_EVERY = 5 * 60e3; // funding, sentiment, on-chain
 const BACKGROUND_EVERY = 15 * 60e3; // background updater results
 const AWAY_RELOAD = 5 * 60e3; // hidden longer than this: reload on return
-const EMA_KEY = 'btc.emas.v1';
-const VIEW_KEY = 'btc.view.v1';
+const CHART_BARS = 500; // candles per load (more load when scrolling back)
+const MAX_BARS = 5000;
+const TRADE_ROWS = 20;
+const INTERVAL_KEY = 'btc.interval.v1';
+const INDICATORS_KEY = 'btc.indicators.v1';
+
+// Candle lengths, and how many forecast (ghost) candles each one shows.
+const INTERVALS = {
+  '1m': { label: '1m', ghosts: 30 },
+  '5m': { label: '5m', ghosts: 24 },
+  '15m': { label: '15m', ghosts: 16 },
+  '1h': { label: '1h', ghosts: 24 },
+  '4h': { label: '4h', ghosts: 12 },
+  '1d': { label: '1D', ghosts: 7 },
+  '1w': { label: '1W', ghosts: 0 },
+};
+const IN_MORE = ['1m', '5m', '1w'];
 
 const $ = (id) => document.getElementById(id);
 
+const savedIndicators = load(INDICATORS_KEY, { main: 'MA', sub: 'VOL' });
 const state = {
   market: null, // { exchange, hourly, daily } (daily/hourly include the unfinished candle)
   model: null,
   extras: {},
   price: NaN,
+  dir: 0, // direction of the last price change: 1 up, -1 down
   now: Date.now(),
   forecast: null,
-  view: load(VIEW_KEY, 'days'),
-  emas: new Set(load(EMA_KEY, [7, 50])),
+  interval: INTERVALS[load(INTERVAL_KEY, '15m')] ? load(INTERVAL_KEY, '15m') : '15m',
+  main: MAIN_KINDS.includes(savedIndicators.main) ? savedIndicators.main : null,
+  sub: SUB_KINDS.includes(savedIndicators.sub) ? savedIndicators.sub : 'VOL',
+  bars: [], // chart candles, updated live
+  loadedInterval: null, // the interval `bars` holds (differs from `interval` while switching)
+  chartToken: 0,
+  historyBusy: false,
+  historyDone: false,
+  ghosts: [],
+  trades: [], // latest trades, oldest first
+  stats: null, // rolling 24h stats from the live feed
+  statsAt: 0,
   lastModel: 0,
   busy: false,
   refitting: false,
-  hover: null,
   feed: null,
   feedState: 'connecting',
   feedName: null,
   lastTrade: 0, // when the last price update arrived (local clock)
   lastTickAt: 0, // when the last individual trade arrived
-  shownPrice: NaN,
   hiddenAt: 0,
   background: null,
 };
@@ -63,14 +90,23 @@ function save(key, value) {
 
 const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const usd2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const usdCents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const compact = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 });
+const two = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (x) => (Math.abs(x) >= 1000 ? usd0 : usd2).format(x);
-const cents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const fmt2 = (x) => (Number.isFinite(x) ? two.format(x) : '—');
+const fmtBig = (x) => {
+  if (!Number.isFinite(x)) return '—';
+  for (const [n, u] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) if (Math.abs(x) >= n) return `${(x / n).toFixed(2)}${u}`;
+  return x.toFixed(2);
+};
+const pad2 = (n) => String(n).padStart(2, '0');
+const clock = (t) => {
+  const d = new Date(t);
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+};
 const signedPct = (x, d = 1) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(d)}%`;
 const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const dayMonth = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'numeric' });
-const weekday = (t) => new Date(t).toLocaleDateString([], { weekday: 'short' });
 const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function leanText(p) {
@@ -143,7 +179,6 @@ async function refreshAll() {
   if (state.busy) return;
   state.busy = true;
   $('refresh').classList.add('spin');
-  $('chart').classList.add('loading');
   try {
     const market = await loadMarket();
     state.market = market;
@@ -154,6 +189,8 @@ async function refreshAll() {
     state.model = await fitModel(finished(market.hourly, HOUR, now), finished(market.daily, DAY, now));
     state.lastModel = Date.now();
     startFeed();
+    if (!state.trades.length) loadTrades();
+    await loadChart(state.interval, { merge: true });
     render(true);
     refreshExtras();
   } catch (err) {
@@ -165,7 +202,6 @@ async function refreshAll() {
   } finally {
     state.busy = false;
     $('refresh').classList.remove('spin');
-    $('chart').classList.remove('loading');
   }
 }
 
@@ -177,6 +213,7 @@ async function refreshExtras() {
 async function refreshBackground() {
   state.background = await loadBackground().catch(() => null);
   renderTrack();
+  if (state.model && state.forecast && state.market) renderSignal();
   if (!state.market) showBackgroundForecast();
 }
 
@@ -191,6 +228,7 @@ function startFeed() {
         state.feedState = s;
         state.feedName = name;
         renderLive();
+        scheduleTrades();
       },
       poll: async () => ({ price: await state.market.exchange.price(), source: state.market.exchange.name }),
     });
@@ -202,10 +240,14 @@ function onLive(ev) {
   if (!state.market) return;
   const { hourly, daily } = state.market;
   if (ev.type === 'tick') {
-    state.price = ev.price;
+    if (ev.qty > 0) addTrade(ev);
+    if (ev.snapshot) return; // recent trades sent on subscribing: list only
+    setPrice(ev.price);
     state.lastTrade = state.lastTickAt = Date.now();
-    const closedH = applyTick(hourly, HOUR, ev.price, ev.t, ev.volume || 0);
-    const closedD = applyTick(daily, DAY, ev.price, ev.t, ev.volume || 0);
+    const qty = ev.qty || 0;
+    const closedH = applyTick(hourly, HOUR, ev.price, ev.t, qty);
+    const closedD = applyTick(daily, DAY, ev.price, ev.t, qty);
+    if (state.bars.length) applyTick(state.bars, STEP[state.loadedInterval], ev.price, ev.t, qty);
     if (closedH || closedD) scheduleRefit(true);
   } else if (ev.type === 'kline') {
     const series = ev.interval === '1h' ? hourly : ev.interval === '1d' ? daily : null;
@@ -215,11 +257,21 @@ function onLive(ev) {
     // The open candle's close is the latest trade price, so it keeps the price
     // moving even if individual trades stop arriving.
     if (!ev.closed && Date.now() - state.lastTickAt > 3000) {
-      state.price = ev.candle.c;
+      setPrice(ev.candle.c);
       state.lastTrade = Date.now();
+      if (state.bars.length) applyTick(state.bars, STEP[state.loadedInterval], ev.candle.c, Date.now());
     }
+  } else if (ev.type === 'stats') {
+    state.stats = ev;
+    state.statsAt = Date.now();
   }
   scheduleRender();
+}
+
+function setPrice(p) {
+  if (p > state.price) state.dir = 1;
+  else if (p < state.price) state.dir = -1;
+  state.price = p;
 }
 
 // When a candle closes the model is refit on the new data. Ticks build the new
@@ -285,6 +337,8 @@ function everySecond() {
     scheduleRefit(true);
     scheduleRender();
   }
+  if (state.bars.length && applyTick(state.bars, STEP[state.loadedInterval], state.price, now)) scheduleRender();
+  chart.tick(now);
   renderLive();
 }
 
@@ -299,9 +353,10 @@ function render(full = false) {
   lastRender = Date.now();
   state.now = lastRender;
   state.forecast = forecastFrom(state.model, state.price, state.now);
-  renderHero();
-  renderChart();
+  renderHeader();
+  renderChartLive();
   renderPathTable();
+  renderSignal();
   renderCards();
   renderIndicators();
   if (full) renderBacktest();
@@ -326,7 +381,6 @@ function renderLive() {
     void badge.offsetWidth;
     badge.classList.add('beat');
   }
-  $('updated').textContent = state.lastTrade ? `Last trade ${clock(state.lastTrade)}` : '';
   if (!state.market || !state.model) return;
   const parts = [];
   if (st === 'live') parts.push(`Live · ${state.feedName}`, state.lastTrade ? `last trade ${ago(Date.now() - state.lastTrade)}` : 'waiting for a trade');
@@ -338,29 +392,125 @@ function renderLive() {
   setStatus(parts.join(' · '));
 }
 
-function renderHero() {
-  const { hourly } = state.market;
+// Price card (layout and metrics as on exchange apps): last price coloured by its last move, ≈ USD value,
+// 24h change, and the 24h high, low and volumes.
+function renderHeader() {
   const price = state.price;
   const priceEl = $('price');
-  // Whole dollars big, cents small: quiet markets often move by cents only,
-  // and those moves should still be visible.
-  const [whole, frac] = cents.format(price).split('.');
-  priceEl.replaceChildren(whole, el('small', {}, `.${frac}`));
-  if (Number.isFinite(state.shownPrice) && price !== state.shownPrice) {
-    priceEl.classList.remove('flash-up', 'flash-down');
-    void priceEl.offsetWidth; // restart the animation
-    priceEl.classList.add(price > state.shownPrice ? 'flash-up' : 'flash-down');
+  priceEl.textContent = fmt2(price);
+  priceEl.className = `ticker-price${state.dir > 0 ? ' up' : state.dir < 0 ? ' down' : ''}`;
+  $('fiat').textContent = Number.isFinite(price) ? `≈${usdCents.format(price)}` : '';
+  const s = dayStats();
+  const ch = $('change');
+  ch.textContent = Number.isFinite(s.change) ? `${s.change >= 0 ? '+' : ''}${(s.change * 100).toFixed(2)}%` : '';
+  ch.className = s.change >= 0 ? 'up' : 'down';
+  $('high').textContent = fmt2(s.high);
+  $('low').textContent = fmt2(s.low);
+  $('vol-base').textContent = fmt2(s.volBase);
+  $('vol-quote').textContent = fmtBig(s.volQuote);
+  const source = state.feedName || state.market?.exchange.name;
+  const usdt = source === 'Binance';
+  $('pair').textContent = usdt ? 'BTC/USDT' : 'BTC/USD';
+  $('source').textContent = source ? ` · ${source}` : '';
+  $('quote').textContent = usdt ? 'USDT' : 'USD';
+  $('vol-quote').previousElementSibling.textContent = usdt ? '24h Vol(USDT)' : '24h Vol(USD)';
+}
+
+// Rolling 24h figures: from the live feed when it sends them, otherwise worked
+// out from the hourly candles.
+function dayStats() {
+  if (state.stats && Date.now() - state.statsAt < 60e3) return state.stats;
+  const now = Date.now();
+  const recent = state.market ? state.market.hourly.filter((c) => c.t + HOUR > now - DAY) : [];
+  const dayAgo = state.market && [...state.market.hourly].reverse().find((c) => c.t + HOUR <= now - DAY);
+  return {
+    high: Math.max(...recent.map((c) => c.h), state.price),
+    low: Math.min(...recent.map((c) => c.l), state.price),
+    volBase: recent.reduce((sum, c) => sum + (c.vb || 0), 0),
+    volQuote: recent.reduce((sum, c) => sum + (c.v || 0), 0),
+    change: dayAgo ? state.price / dayAgo.c - 1 : NaN,
+  };
+}
+
+// ---------- Buy / sell signal ----------
+
+const SIDE = {
+  buy: { cls: 'up', chip: '▲ Lean buy', word: 'BUY' },
+  sell: { cls: 'down', chip: '▼ Lean sell', word: 'SELL' },
+  none: { cls: 'flat', chip: 'No edge', word: '' },
+};
+const pct0 = (x) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '—');
+
+// Trend (long averages) and momentum (short-term signals) in plain words.
+function trendMomentum() {
+  const snap = indicatorSnapshot(state.market.daily, state.market.daily[state.market.daily.length - 1].t + DAY > Date.now());
+  const by = Object.fromEntries(snap.rows.map((r) => [r.key, r]));
+  const sum = (keys) => keys.reduce((n, k) => n + (by[k]?.vote ?? 0), 0);
+  const trend = sum(['ema50', 'ema100', 'ema200', 'cross']);
+  const momentum = sum(['ema7', 'rsi', 'macd', 'obv']);
+  const reasons = (keys, sign) => keys.filter((k) => by[k] && by[k].vote === sign).map((k) => ({
+    ema7: sign > 0 ? 'above its 7-day average' : 'below its 7-day average',
+    rsi: by.rsi.note.toLowerCase(),
+    macd: sign > 0 ? 'MACD above its signal' : 'MACD under its signal',
+    obv: sign > 0 ? 'volume flowing in' : 'volume flowing out',
+  })[k]);
+  const t = trend > 1 ? 'up (price above its 50/100/200-day averages)' : trend < -1 ? 'down (price below its 50/100/200-day averages)' : 'sideways';
+  const mWord = momentum > 0 ? 'strengthening' : momentum < 0 ? 'weakening' : 'mixed';
+  const why = reasons(['ema7', 'rsi', 'macd', 'obv'], Math.sign(momentum) || 1);
+  return `Trend: ${t}. Momentum: ${mWord}${momentum && why.length ? ` (${why.join(', ')})` : ''}.`;
+}
+
+function renderSignal() {
+  const card = $('signal-card');
+  if (!state.model || !state.forecast || !state.market) {
+    card.hidden = true;
+    return;
   }
-  state.shownPrice = price;
-  const dayAgo = [...hourly].reverse().find((c) => c.t + HOUR <= state.now - DAY);
-  const change = $('change');
-  if (dayAgo) {
-    const ch = price / dayAgo.c - 1;
-    change.textContent = `${ch >= 0 ? '▲' : '▼'} ${signedPct(ch, 2)} 24h`;
-    change.className = ch >= 0 ? 'up' : 'down';
+  card.hidden = false;
+  const track = state.background?.track?.horizons || {};
+  const sigs = HORIZONS.map((hz) => ({
+    hz,
+    s: signalFor({ pUp: state.model.pUp[hz.key], replay: state.model.tests[hz.key], live: track[hz.key] }),
+  }));
+  const leaning = sigs.filter((x) => x.s.lean !== 'none');
+  const head = $('signal-head');
+  const sides = new Set(leaning.map((x) => x.s.lean));
+  if (!leaning.length) {
+    head.textContent = 'No clear edge right now: the model can’t call the direction better than guessing. Use the ranges below to judge your risk.';
+    head.className = 'signal-head flat';
+  } else if (sides.size > 1) {
+    head.textContent = `Mixed: ${leaning.map((x) => `${SIDE[x.s.lean].word} on ${x.hz.key}`).join(', ')}. No single direction.`;
+    head.className = 'signal-head flat';
+  } else {
+    const side = [...sides][0];
+    head.textContent = `${side === 'buy' ? '▲' : '▼'} Leaning ${SIDE[side].word} (${leaning.map((x) => x.hz.key).join(', ')}) — a small edge, not a sure thing.`;
+    head.className = `signal-head ${SIDE[side].cls}`;
   }
-  const vol = hourly.filter((c) => c.t + HOUR > state.now - DAY).reduce((s, c) => s + c.v, 0);
-  $('volume').textContent = `Volume 24h ${compact.format(vol)}`;
+  const rows = sigs.map(({ hz, s }) => {
+    const guess = s.upShare >= 0.5 ? 'up' : 'down';
+    const evidence = Number.isFinite(s.right)
+      ? `right ${pct0(s.right)} vs ${pct0(s.baseline)} by always guessing ${guess} (${s.n} ${s.source === 'live' ? 'live' : 'replayed'})`
+      : 'no record yet';
+    return el('tr', {},
+      el('td', { class: 'sig-h' }, hz.key),
+      el('td', {},
+        el('div', { class: 'sig-line' },
+          el('span', { class: `sig-chip ${SIDE[s.lean].cls}` }, SIDE[s.lean].chip),
+          el('span', { class: 'sig-p' }, `${pct0(s.pUp)} chance up`)),
+        el('div', { class: 'sig-ev' }, evidence)));
+  });
+  $('signal-rows').replaceChildren(el('tbody', {}, ...rows));
+  const d = state.forecast.cards['24h'];
+  const w = state.forecast.cards['7d'];
+  $('signal-risk').textContent =
+    `If you buy now at ${fmt2(state.price)}: within 24h there's about a 10% chance it's below ${money(d.lo80)} and 2.5% below ${money(d.lo95)} ` +
+    `(within 7 days: 10% below ${money(w.lo80)}). If you sell now: 10% chance it's above ${money(d.hi80)} and 2.5% above ${money(d.hi95)} within 24h.`;
+  $('signal-trend').textContent = trendMomentum();
+  const mini = $('signal-mini');
+  mini.hidden = false;
+  mini.className = `signal-mini ${head.className.replace('signal-head', '').trim()}`;
+  mini.textContent = !leaning.length ? 'Signal: no clear edge ›' : sides.size > 1 ? 'Signal: mixed ›'
+    : `Signal: leaning ${SIDE[[...sides][0]].word.toLowerCase()} (${leaning.map((x) => x.hz.key).join(', ')}) ›`;
 }
 
 function renderCards() {
@@ -490,316 +640,234 @@ function renderBacktest() {
 }
 
 function renderPathTable() {
-  const path = state.view === 'days' ? state.forecast.dayPath : state.forecast.hourPath;
-  const head = el('tr', {}, ...['Time', 'Middle', '80% range', '95% range', 'Up'].map((h) => el('th', {}, h)));
-  const rows = path.map((p) =>
+  const head = el('tr', {}, ...['Candle closes', 'Middle', '50% range', '95% range', 'Up'].map((h) => el('th', {}, h)));
+  const rows = state.ghosts.map((g) =>
     el('tr', {},
-      el('td', {}, when(p.t)),
-      el('td', {}, money(p.mid)),
-      el('td', {}, `${money(p.lo80)} – ${money(p.hi80)}`),
-      el('td', {}, `${money(p.lo95)} – ${money(p.hi95)}`),
-      el('td', {}, `${Math.round(p.pUp * 100)}%`)));
+      el('td', {}, when(g.end)),
+      el('td', {}, money(g.mid)),
+      el('td', {}, `${money(g.lo50)} – ${money(g.hi50)}`),
+      el('td', {}, `${money(g.lo95)} – ${money(g.hi95)}`),
+      el('td', {}, `${Math.round(g.pUp * 100)}%`)));
   $('path-table').replaceChildren(el('thead', {}, head), el('tbody', {}, ...rows));
 }
 
 // ---------- Chart ----------
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
-function s(tag, attrs = {}, text) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
-  if (text != null) node.textContent = text;
-  return node;
-}
+const chart = createBinanceChart($('chart'), { onNeedHistory: loadOlder });
+chart.setMain(state.main);
+chart.setSub(state.sub);
 
-function niceStep(range, count) {
-  const raw = range / count;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const f = raw / mag;
-  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag;
-}
-
-function priceTick(v, step) {
-  if (step >= 1000) return `$${Math.round(v / 1000)}k`;
-  if (step >= 100) return `$${(v / 1000).toFixed(1)}k`;
-  return `$${Math.round(v).toLocaleString()}`;
-}
-
-// The series behind the chart for the current view.
-function chartData() {
-  const { hourly, daily } = state.market;
-  const days = state.view === 'days';
-  const candles = days ? daily : hourly;
-  const step = days ? DAY : HOUR;
-  const span = days ? 30 * DAY : 72 * HOUR;
-  // Each finished candle is plotted at its close time; the unfinished one at now.
-  const pts = candles.map((c, i) => ({ t: Math.min(c.t + step, state.now), c: c.c, i }));
-  const start = state.now - span;
-  const hist = pts.filter((p) => p.t >= start);
-  hist[hist.length - 1] = { ...hist[hist.length - 1], t: state.now, c: state.price };
-
-  const dailyCloses = daily.map((c) => c.c);
-  const emaLines = [];
-  for (const period of [...state.emas].sort((a, b) => a - b)) {
-    const series = ema(dailyCloses, period);
-    if (days) {
-      const line = hist.map((p) => ({ t: p.t, v: series[p.i] })).filter((p) => Number.isFinite(p.v));
-      if (line.length) emaLines.push({ period, line });
+// Candles for a timeframe. `merge` (periodic reloads) folds fresh candles into
+// the ones on screen so the view and loaded history stay put.
+async function loadChart(interval, { merge = false } = {}) {
+  const token = ++state.chartToken;
+  const same = interval === state.loadedInterval;
+  state.interval = interval;
+  save(INTERVAL_KEY, interval);
+  markIntervals();
+  if (!state.market) return;
+  const box = $('chart');
+  box.classList.add('loading');
+  try {
+    const fresh = await state.market.exchange.candles(interval, CHART_BARS);
+    if (token !== state.chartToken) return; // a newer choice won
+    if (!fresh.length) throw new Error('no candles');
+    const opts = { stepMs: STEP[interval], isDaily: interval === '1d' || interval === '1w', future: INTERVALS[interval].ghosts };
+    if (merge && same && state.bars.length) {
+      for (const c of fresh) upsertCandle(state.bars, c);
+      chart.setData(state.bars, { ...opts, keepView: true });
     } else {
-      const v = series[series.length - 1];
-      if (Number.isFinite(v)) emaLines.push({ period, line: [{ t: hist[0].t, v }, { t: state.now, v }] });
+      state.bars = fresh;
+      state.historyDone = false;
+      chart.setData(fresh, opts);
     }
+    state.loadedInterval = interval;
+    if (state.model) {
+      renderChartLive();
+      renderPathTable();
+    }
+  } catch (err) {
+    console.warn('Chart candles', err);
+    if (token === state.chartToken) setStatus(`Couldn't load ${INTERVALS[interval].label} candles. ${err.message || err}`);
+  } finally {
+    if (token === state.chartToken) box.classList.remove('loading');
   }
-  const path = days ? state.forecast.dayPath : state.forecast.hourPath;
-  return { days, step: days ? DAY : 4 * HOUR, hist, emaLines, path };
 }
 
-function renderChart() {
-  const box = $('chart');
-  const svg = $('chart-svg');
-  const W = Math.max(box.clientWidth, 280);
-  const H = box.clientHeight || 300;
-  const M = { top: 26, right: 10, bottom: 26, left: 46 };
-  const d = chartData();
-  const { hist, path, emaLines } = d;
-  const price = state.price;
-
-  // Scales
-  const t0 = hist[0].t;
-  const t1 = path[path.length - 1].t + d.step * 0.6;
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const p of hist) { lo = Math.min(lo, p.c); hi = Math.max(hi, p.c); }
-  for (const p of path) { lo = Math.min(lo, p.lo95); hi = Math.max(hi, p.hi95); }
-  for (const e of emaLines) for (const p of e.line) { lo = Math.min(lo, p.v); hi = Math.max(hi, p.v); }
-  const pad = (hi - lo) * 0.06;
-  lo -= pad;
-  hi += pad;
-  const yStep = niceStep(hi - lo, H < 260 ? 4 : 5);
-  const x = (t) => M.left + ((t - t0) / (t1 - t0)) * (W - M.left - M.right);
-  const y = (v) => M.top + (1 - (v - lo) / (hi - lo)) * (H - M.top - M.bottom);
-
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.replaceChildren();
-
-  // Grid + price axis
-  const grid = s('g');
-  for (let v = Math.ceil(lo / yStep) * yStep; v <= hi; v += yStep) {
-    grid.append(s('line', { class: 'grid', x1: M.left, x2: W - M.right, y1: y(v), y2: y(v) }));
-    grid.append(s('text', { x: M.left - 6, y: y(v) + 4, 'text-anchor': 'end' }, priceTick(v, yStep)));
-  }
-  grid.append(s('line', { class: 'axis', x1: M.left, x2: W - M.right, y1: H - M.bottom, y2: H - M.bottom }));
-  svg.append(grid);
-
-  // Time axis: dates like the sketch (Days) or midnights (Hours).
-  const ticks = s('g');
-  const tickEvery = d.days ? 7 * DAY : DAY;
-  const first = new Date(t0);
-  first.setHours(0, 0, 0, 0);
-  let lastX = -Infinity;
-  for (let t = first.getTime(); t <= t1; t += tickEvery) {
-    const date = new Date(t);
-    date.setHours(0, 0, 0, 0); // stay on local midnight across DST changes
-    const tt = date.getTime();
-    if (tt < t0) continue;
-    const xx = x(tt);
-    if (xx - lastX < 44 || xx > W - M.right - 10) continue;
-    lastX = xx;
-    ticks.append(s('line', { class: 'axis', x1: xx, x2: xx, y1: H - M.bottom, y2: H - M.bottom + 4 }));
-    ticks.append(s('text', { x: xx, y: H - M.bottom + 16, 'text-anchor': 'middle' }, d.days ? dayMonth(tt) : `${weekday(tt)} ${new Date(tt).getDate()}`));
-  }
-  svg.append(ticks);
-
-  // Today divider
-  const xNow = x(state.now);
-  svg.append(s('line', { class: 'now-line', x1: xNow, x2: xNow, y1: M.top - 6, y2: H - M.bottom }));
-
-  // EMA lines with labels at their left end
-  const labels = [];
-  for (const e of emaLines) {
-    const dash = { 7: 'none', 50: '6 4', 100: '2 3', 200: '10 3 2 3' }[e.period] ?? '4 4';
-    svg.append(s('polyline', {
-      class: 'ema', points: e.line.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(' '),
-      'stroke-dasharray': dash,
-    }));
-    labels.push({ text: `EMA ${e.period}`, y: y(e.line[0].v) - 4 });
-  }
-  labels.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 12);
-  for (const l of labels) {
-    const ly = Math.min(Math.max(l.y, M.top + 8), H - M.bottom - 4);
-    svg.append(s('rect', { class: 'ema-label-bg', x: M.left + 2, y: ly - 9, width: 44, height: 12, rx: 3 }));
-    svg.append(s('text', { class: 'ema-label', x: M.left + 4, y: ly }, l.text));
-  }
-
-  // Forecast cone (95%), dashed edges like the sketch
-  const upper = [[xNow, y(price)], ...path.map((p) => [x(p.t), y(p.hi95)])];
-  const lower = [[xNow, y(price)], ...path.map((p) => [x(p.t), y(p.lo95)])];
-  const ptsStr = (arr) => arr.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(' ');
-  svg.append(s('polygon', { class: 'cone', points: ptsStr([...upper, ...lower.slice(1).reverse()]) }));
-  svg.append(s('polyline', { class: 'cone-edge', points: ptsStr(upper) }));
-  svg.append(s('polyline', { class: 'cone-edge', points: ptsStr(lower) }));
-
-  // Red forecast candles, one per step: the box is the 50% range, the thin
-  // line the 80% range, and the tick across the box the middle estimate.
-  const stepPx = x(state.now + d.step) - xNow;
-  const bw = Math.max(4, Math.min(16, stepPx * 0.5));
-  const candles = s('g');
-  path.forEach((p, i) => {
-    const cx = x(p.t);
-    const g = s('g', { class: `candle${state.hover?.kind === 'f' && state.hover.i === i ? ' active' : ''}` });
-    g.append(s('line', { class: 'wick', x1: cx, x2: cx, y1: y(p.hi80), y2: y(p.lo80) }));
-    g.append(s('rect', { class: 'body', x: cx - bw / 2, y: y(p.hi50), width: bw, height: Math.max(y(p.lo50) - y(p.hi50), 2), rx: 1.5 }));
-    g.append(s('line', { class: 'mid', x1: cx - bw / 2 - 2, x2: cx + bw / 2 + 2, y1: y(p.mid), y2: y(p.mid) }));
-    candles.append(g);
-  });
-  svg.append(candles);
-
-  // Actual price line (blue) and the Today dot
-  svg.append(s('polyline', { class: 'actual', points: hist.map((p) => `${x(p.t).toFixed(1)},${y(p.c).toFixed(1)}`).join(' ') }));
-  svg.append(s('circle', { class: 'today-dot', cx: xNow, cy: y(price), r: 5 }));
-  const labelAbove = y(price) - M.top > 30;
-  svg.append(s('text', {
-    class: 'today-label', x: xNow, y: labelAbove ? y(price) - 12 : y(price) + 22, 'text-anchor': 'middle',
-  }, d.days ? 'Today' : 'Now'));
-
-  // Hover layer
-  const hover = state.hover;
-  if (hover) {
-    const hx = hover.kind === 'h' ? x(hist[hover.i].t) : x(path[hover.i].t);
-    svg.append(s('line', { class: 'cross', x1: hx, x2: hx, y1: M.top - 6, y2: H - M.bottom }));
-    if (hover.kind === 'h') svg.append(s('circle', { class: 'hover-dot', cx: hx, cy: y(hist[hover.i].c), r: 4.5 }));
-  }
-
-  state.chart = { x, y, hist, path, emaLines, W, M, xNow };
-  renderTip();
-  $('legend-ema').hidden = !emaLines.length;
-  const last = path[path.length - 1];
-  $('chart-caption').textContent =
-    `${d.days ? 'Last 30 days and the next 7' : 'Last 3 days and the next 24 hours, in 4-hour steps'}. ` +
-    `By ${when(last.t)}, the model gives 95% odds of ${money(last.lo95)} – ${money(last.hi95)}.`;
-  box.setAttribute('aria-label', `Bitcoin price ${money(price)}. ${$('chart-caption').textContent}`);
-}
-
-function renderTip() {
-  const tip = $('tip');
-  const h = state.hover;
-  const c = state.chart;
-  if (!h || !c) {
-    tip.hidden = true;
-    return;
-  }
-  const rows = [];
-  const row = (keyCls, value, label) =>
-    el('div', { class: 't-row' }, el('i', { class: `key ${keyCls}` }), el('b', {}, value), el('span', {}, label));
-  let t;
-  if (h.kind === 'h') {
-    const p = c.hist[h.i];
-    t = p.t;
-    rows.push(el('div', { class: 't-head' }, h.i === c.hist.length - 1 ? `Now · ${when(t)}` : when(t)));
-    rows.push(row('', money(p.c), 'price'));
-    for (const e of c.emaLines) {
-      const pt = e.line.find((q) => q.t === p.t) || e.line[e.line.length - 1];
-      rows.push(row('ema', money(pt.v), `EMA ${e.period}`));
-    }
-  } else {
-    const p = c.path[h.i];
-    t = p.t;
-    rows.push(el('div', { class: 't-head' }, `Forecast · ${when(t)}`));
-    rows.push(row('pred', money(p.mid), 'middle'));
-    rows.push(row('pred', `${money(p.lo50)} – ${money(p.hi50)}`, '50%'));
-    rows.push(row('pred', `${money(p.lo80)} – ${money(p.hi80)}`, '80%'));
-    rows.push(row('pred', `${money(p.lo95)} – ${money(p.hi95)}`, '95%'));
-    rows.push(el('div', { class: 't-row' }, el('span', {}, `Chance it's higher than now: ${Math.round(p.pUp * 100)}%`)));
-  }
-  tip.replaceChildren(...rows);
-  tip.hidden = false;
-  const xx = c.x(t);
-  const w = tip.offsetWidth;
-  const left = xx + 12 + w > c.W ? xx - 12 - w : xx + 12;
-  tip.style.left = `${Math.max(0, left)}px`;
-}
-
-function pointsForHover() {
-  const c = state.chart;
-  return [
-    ...c.hist.map((p, i) => ({ kind: 'h', i, px: c.x(p.t) })),
-    ...c.path.map((p, i) => ({ kind: 'f', i, px: c.x(p.t) })),
-  ];
-}
-
-function setupChartEvents() {
-  const box = $('chart');
-  const move = (e) => {
-    if (!state.chart) return;
-    const rect = box.getBoundingClientRect();
-    const px = ((e.clientX - rect.left) / rect.width) * state.chart.W;
-    let best = null;
-    for (const p of pointsForHover()) if (!best || Math.abs(p.px - px) < Math.abs(best.px - px)) best = p;
-    if (best && (state.hover?.kind !== best.kind || state.hover?.i !== best.i)) {
-      state.hover = { kind: best.kind, i: best.i };
-      renderChart();
-    }
-  };
-  box.addEventListener('pointermove', move);
-  box.addEventListener('pointerdown', move);
-  box.addEventListener('pointerleave', (e) => {
-    if (e.pointerType === 'mouse') {
-      state.hover = null;
-      renderChart();
-    }
-  });
-  box.addEventListener('keydown', (e) => {
-    if (!state.chart || !['ArrowLeft', 'ArrowRight', 'Escape'].includes(e.key)) return;
-    e.preventDefault();
-    if (e.key === 'Escape') {
-      state.hover = null;
-      renderChart();
+// Scrolled back to the start of the loaded candles: fetch older ones.
+async function loadOlder() {
+  if (state.historyBusy || state.historyDone || !state.market || !state.bars.length) return;
+  if (state.bars.length >= MAX_BARS) return;
+  state.historyBusy = true;
+  const token = state.chartToken;
+  try {
+    const first = state.bars[0].t;
+    const older = (await state.market.exchange.candles(state.interval, CHART_BARS, first)).filter((c) => c.t < first);
+    if (token !== state.chartToken) return;
+    if (!older.length) {
+      state.historyDone = true;
       return;
     }
-    const all = pointsForHover();
-    let idx = state.hover ? all.findIndex((p) => p.kind === state.hover.kind && p.i === state.hover.i) : state.chart.hist.length - 1;
-    idx = Math.min(all.length - 1, Math.max(0, idx + (e.key === 'ArrowRight' ? 1 : -1)));
-    state.hover = { kind: all[idx].kind, i: all[idx].i };
-    renderChart();
-  });
-  box.addEventListener('blur', () => {
-    state.hover = null;
-    if (state.chart) renderChart();
-  });
+    state.bars.unshift(...older);
+    chart.prepended(older.length);
+  } catch (err) {
+    console.warn('Older candles', err);
+    state.historyDone = true;
+  } finally {
+    state.historyBusy = false;
+  }
 }
 
+// Live candle, indicators and the forecast ghost candles.
+function renderChartLive() {
+  if (!state.bars.length || state.loadedInterval !== state.interval) return;
+  chart.sync();
+  const cfg = INTERVALS[state.interval];
+  const last = state.bars[state.bars.length - 1];
+  state.ghosts = state.model && cfg.ghosts
+    ? forecastBars(state.model, state.price, Date.now(), last.t, STEP[state.interval], cfg.ghosts)
+    : [];
+  chart.setGhosts(state.ghosts, state.price);
+  const g = state.ghosts[state.ghosts.length - 1];
+  const caption = g
+    ? `Grey candles: the forecast for each of the next ${state.ghosts.length} ${cfg.label} candles. ` +
+      `By ${when(g.end)} the model gives 95% odds of ${money(g.lo95)} – ${money(g.hi95)}.`
+    : cfg.ghosts === 0
+      ? 'Forecasts reach 7 days ahead, so weekly candles have none. Choose 1D or shorter to see them.'
+      : '';
+  $('chart-caption').textContent = caption;
+  $('chart').setAttribute('aria-label', `Bitcoin ${cfg.label} candlestick chart, last price ${fmt2(state.price)}. ${caption}`);
+}
+
+function markIntervals() {
+  for (const b of document.querySelectorAll('[data-iv]')) b.setAttribute('aria-pressed', String(b.dataset.iv === state.interval));
+  const inMore = IN_MORE.includes(state.interval);
+  $('more').textContent = inMore ? `${INTERVALS[state.interval].label} ▾` : 'More ▾';
+  $('more').classList.toggle('active', inMore);
+}
+
+function markIndicators() {
+  for (const b of document.querySelectorAll('[data-main]')) b.setAttribute('aria-pressed', String(b.dataset.main === state.main));
+  for (const b of document.querySelectorAll('[data-sub]')) b.setAttribute('aria-pressed', String(b.dataset.sub === state.sub));
+  save(INDICATORS_KEY, { main: state.main, sub: state.sub });
+}
+
+// ---------- Full-screen chart ----------
+
+function setFull(on) {
+  const card = $('chart-card');
+  if (card.classList.contains('full') === on) return;
+  card.classList.toggle('full', on);
+  document.body.classList.toggle('no-scroll', on);
+  $('fs').hidden = on;
+  $('fs-close').hidden = !on;
+  if (on) {
+    history.pushState({ chartFull: true }, '');
+    // Real full screen and landscape where the browser allows it (Android);
+    // elsewhere the chart simply fills the window.
+    card.requestFullscreen?.().then(() => screen.orientation?.lock?.('landscape')).catch(() => {});
+  } else {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (history.state?.chartFull) history.back();
+  }
+}
+
+// ---------- Market trades ----------
+
+function addTrade(ev) {
+  state.trades.push({ t: ev.t, price: ev.price, qty: ev.qty, side: ev.side });
+  if (state.trades.length > 3 * TRADE_ROWS) state.trades.splice(0, state.trades.length - 3 * TRADE_ROWS);
+  scheduleTrades();
+}
+
+async function loadTrades() {
+  try {
+    const list = await state.market.exchange.trades(TRADE_ROWS);
+    const firstLive = state.trades.length ? state.trades[0].t : Infinity;
+    state.trades = [...list.filter((t) => t.t < firstLive), ...state.trades];
+    scheduleTrades();
+  } catch {
+    /* the live feed fills the list */
+  }
+}
+
+let tradesTimer = 0;
+function scheduleTrades() {
+  if (!tradesTimer) tradesTimer = setTimeout(renderTrades, 250); // at most 4 redraws a second
+}
+
+function renderTrades() {
+  tradesTimer = 0;
+  const body = $('trades-body');
+  while (body.rows.length < TRADE_ROWS) {
+    const tr = body.insertRow();
+    for (let i = 0; i < 3; i++) tr.insertCell();
+  }
+  const list = state.trades.slice(-TRADE_ROWS).reverse();
+  [...body.rows].forEach((tr, i) => {
+    const t = list[i];
+    tr.hidden = !t;
+    if (!t) return;
+    tr.cells[0].textContent = clock(t.t);
+    tr.cells[1].textContent = fmt2(t.price);
+    tr.cells[1].className = t.side === 'sell' ? 'down' : 'up';
+    tr.cells[2].textContent = t.qty.toFixed(5);
+  });
+  const note = $('trades-note');
+  const polling = state.feedState === 'polling';
+  note.hidden = list.length > 0 && !polling;
+  note.textContent = polling ? 'Live trades are unavailable while the price is checked every 10 s.' : 'Waiting for trades…';
+}
+
+// ---------- Controls ----------
+
 function setupControls() {
-  for (const input of document.querySelectorAll('input[name="view"]')) {
-    input.checked = input.value === state.view;
-    input.addEventListener('change', () => {
-      state.view = input.value;
-      state.hover = null;
-      save(VIEW_KEY, state.view);
-      if (state.market && state.forecast) {
-        renderChart();
-        renderPathTable();
-      }
+  markIntervals();
+  markIndicators();
+  const menu = $('more-menu');
+  const closeMenu = () => {
+    menu.hidden = true;
+    $('more').setAttribute('aria-expanded', 'false');
+  };
+  for (const b of document.querySelectorAll('[data-iv]')) {
+    b.addEventListener('click', () => {
+      closeMenu();
+      if (b.dataset.iv !== state.interval || state.loadedInterval !== b.dataset.iv) loadChart(b.dataset.iv);
     });
   }
-  for (const btn of document.querySelectorAll('[data-ema]')) {
-    const period = +btn.dataset.ema;
-    btn.setAttribute('aria-pressed', String(state.emas.has(period)));
-    btn.addEventListener('click', () => {
-      if (state.emas.has(period)) state.emas.delete(period);
-      else state.emas.add(period);
-      btn.setAttribute('aria-pressed', String(state.emas.has(period)));
-      save(EMA_KEY, [...state.emas]);
-      if (state.market && state.forecast) renderChart();
+  $('more').addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.hidden = !menu.hidden;
+    $('more').setAttribute('aria-expanded', String(!menu.hidden));
+  });
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target)) closeMenu();
+  });
+  for (const b of document.querySelectorAll('[data-main]')) {
+    b.addEventListener('click', () => {
+      state.main = state.main === b.dataset.main ? null : b.dataset.main; // tap again to hide
+      chart.setMain(state.main);
+      markIndicators();
     });
   }
+  for (const b of document.querySelectorAll('[data-sub]')) {
+    b.addEventListener('click', () => {
+      state.sub = b.dataset.sub;
+      chart.setSub(state.sub);
+      markIndicators();
+    });
+  }
+  $('fs').addEventListener('click', () => setFull(true));
+  $('fs-close').addEventListener('click', () => setFull(false));
+  window.addEventListener('popstate', () => setFull(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setFull(false);
+  });
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) setFull(false);
+  });
   $('refresh').addEventListener('click', refreshAll);
   $('retry').addEventListener('click', refreshAll);
-  let raf = 0;
-  new ResizeObserver(() => {
-    cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => state.market && state.forecast && renderChart());
-  }).observe($('chart'));
 }
 
 // ---------- Background updater ----------
@@ -835,7 +903,8 @@ function showBackgroundForecast() {
   if (!f || state.market) return;
   state.price = f.price;
   state.forecast = { cards: f.cards };
-  $('price').textContent = money(f.price);
+  $('price').textContent = fmt2(f.price);
+  $('fiat').textContent = `≈${usdCents.format(f.price)}`;
   renderCards();
   setStatus(`Exchanges unreachable from this device · showing the background forecast from ${when(f.generatedAt)} (${f.source})`);
 }
@@ -843,7 +912,6 @@ function showBackgroundForecast() {
 // ---------- Start ----------
 
 setupControls();
-setupChartEvents();
 refreshAll();
 refreshBackground();
 setInterval(everySecond, 1000);
@@ -861,4 +929,4 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Exposed for tests.
-window.__btc = { state, STEP };
+window.__btc = { state, STEP, chart };

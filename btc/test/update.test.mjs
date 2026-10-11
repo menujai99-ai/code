@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { run, priceAt, scoreHistory } from '../scripts/update.mjs';
+import { run, priceAt, scoreHistory, summarize } from '../scripts/update.mjs';
 import { garchPath } from './synthetic.mjs';
 
 const H = 3600e3;
@@ -62,6 +62,8 @@ test('scoring counts ranges and direction', () => {
   const [s] = scoreHistory([run1], [], hourly, 10 * H);
   assert.equal(s.actual, 110);
   assert.deepEqual([s.in50, s.in80, s.in95, s.called, s.hit], [true, true, true, true, true]);
+  const totals = summarize([s, { ...s, actual: 90, in50: false, hit: false }], 10 * H).horizons['1h'];
+  assert.deepEqual([totals.count, totals.ups, totals.hits, totals.called], [2, 1, 1, 2]);
 });
 
 function close(a, b) {

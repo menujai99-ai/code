@@ -27,10 +27,24 @@
       </button>
     </header>
 
-    <section class="hero" aria-live="polite">
-      <div class="hero-label">Bitcoin · USD <span id="live" class="live" data-state="connecting"><i aria-hidden="true"></i><span id="live-text">Connecting…</span></span></div>
-      <div id="price" class="hero-price">—</div>
-      <div class="hero-sub"><span id="change"></span><span id="volume"></span><span id="updated" class="num"></span></div>
+    <section class="card ticker" aria-label="Price">
+      <div class="ticker-head">
+        <span id="pair">BTC/USDT</span><span id="source"></span>
+        <span id="live" class="live" data-state="connecting"><i aria-hidden="true"></i><span id="live-text">Connecting…</span></span>
+      </div>
+      <div class="ticker-body">
+        <div class="ticker-main">
+          <div id="price" class="ticker-price" aria-live="polite">—</div>
+          <div class="ticker-sub"><span id="fiat"></span> <span id="change"></span></div>
+        </div>
+        <dl class="ticker-stats">
+          <div><dt>24h High</dt><dd id="high">—</dd></div>
+          <div><dt>24h Low</dt><dd id="low">—</dd></div>
+          <div><dt>24h Vol(BTC)</dt><dd id="vol-base">—</dd></div>
+          <div><dt>24h Vol(USDT)</dt><dd id="vol-quote">—</dd></div>
+        </dl>
+      </div>
+      <a id="signal-mini" class="signal-mini" href="#signal-card" hidden></a>
     </section>
 
     <div id="error" class="error card" hidden>
@@ -38,37 +52,70 @@
       <button id="retry" class="btn primary small" type="button">Try again</button>
     </div>
 
-    <section class="card chart-card">
-      <div class="chart-head">
-        <h2>BTC price</h2>
-        <div class="segmented" role="radiogroup" aria-label="Chart time scale">
-          <input type="radio" name="view" id="view-days" value="days" checked /><label for="view-days">Days</label>
-          <input type="radio" name="view" id="view-hours" value="hours" /><label for="view-hours">Hours</label>
+    <section id="chart-card" class="card chart-card" aria-label="Candlestick chart">
+      <div class="k-toolbar">
+        <div class="k-intervals" role="group" aria-label="Candle length">
+          <button type="button" data-iv="15m">15m</button>
+          <button type="button" data-iv="1h">1h</button>
+          <button type="button" data-iv="4h">4h</button>
+          <button type="button" data-iv="1d">1D</button>
+          <div class="k-more">
+            <button id="more" type="button" aria-haspopup="true" aria-expanded="false">More ▾</button>
+            <div id="more-menu" class="k-menu" hidden>
+              <button type="button" data-iv="1m">1m</button>
+              <button type="button" data-iv="5m">5m</button>
+              <button type="button" data-iv="1w">1W</button>
+            </div>
+          </div>
+        </div>
+        <button id="fs" class="k-icon" type="button" aria-label="Full-screen chart">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        </button>
+        <button id="fs-close" class="k-icon" type="button" aria-label="Close full screen" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+      <div id="chart" class="k-box" role="img" aria-label="Bitcoin candlestick chart"></div>
+      <div class="k-tabs">
+        <div role="group" aria-label="Indicator on the chart">
+          <button type="button" data-main="MA">MA</button>
+          <button type="button" data-main="EMA">EMA</button>
+          <button type="button" data-main="BOLL">BOLL</button>
+        </div>
+        <span class="k-sep" aria-hidden="true"></span>
+        <div role="group" aria-label="Indicator below the chart">
+          <button type="button" data-sub="VOL">VOL</button>
+          <button type="button" data-sub="MACD">MACD</button>
+          <button type="button" data-sub="RSI">RSI</button>
         </div>
       </div>
-      <div class="ema-chips" role="group" aria-label="Show moving averages">
-        <span>EMA</span>
-        <button type="button" data-ema="7" aria-pressed="true">7</button>
-        <button type="button" data-ema="50" aria-pressed="true">50</button>
-        <button type="button" data-ema="100" aria-pressed="false">100</button>
-        <button type="button" data-ema="200" aria-pressed="false">200</button>
-        <small>days</small>
-      </div>
-      <div id="chart" class="chart loading" tabindex="0" role="img" aria-label="Bitcoin price chart with forecast">
-        <svg id="chart-svg" aria-hidden="true"></svg>
-        <div id="tip" class="tip" hidden></div>
-      </div>
       <div class="legend">
-        <span><i class="key-line"></i>Actual price</span>
-        <span><i class="key-candle"></i>Prediction (box 50%, line 80%)</span>
+        <span><i class="key-ghost"></i>Forecast candle (box 50%, line 80%)</span>
         <span><i class="key-cone"></i>95% range</span>
-        <span id="legend-ema" hidden><i class="key-ema"></i>EMA</span>
       </div>
       <p id="chart-caption" class="caption"></p>
       <details class="table-view">
         <summary>Show forecast as a table</summary>
         <table id="path-table"></table>
       </details>
+    </section>
+
+    <section id="signal-card" class="card signal" aria-label="Buy or sell signal" hidden>
+      <h2>Should I buy or sell?</h2>
+      <p id="signal-head" class="signal-head"></p>
+      <table id="signal-rows" class="signal-rows"></table>
+      <p id="signal-risk" class="signal-risk"></p>
+      <p id="signal-trend" class="note"></p>
+      <p class="note"><b>Not financial advice.</b> This shows what the data says, not what you should do.</p>
+    </section>
+
+    <section class="card trades-card" aria-label="Market trades">
+      <h2>Market Trades</h2>
+      <table class="trades">
+        <thead><tr><th>Time</th><th>Price(<span id="quote">USDT</span>)</th><th>Amount(BTC)</th></tr></thead>
+        <tbody id="trades-body"></tbody>
+      </table>
+      <p id="trades-note" class="note">Waiting for trades…</p>
     </section>
 
     <section id="cards" class="horizons" aria-label="Price ranges by horizon"></section>
@@ -105,7 +152,8 @@
         <li><b>Shape of the range.</b> Bitcoin has more big surprises than a bell curve. The range uses the real shape of past moves, scaled to today's volatility.</li>
         <li><b>Which way it leans.</b> A small logistic-regression model trained on the indicators (EMAs, RSI, MACD, Bollinger %B, volume, on-balance volume, recent returns) estimates the chance of finishing higher. It can only nudge the middle of the range a little, and it is pulled back to 50% when the backtest shows no edge.</li>
         <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
-        <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, chart and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
+        <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles, Market Trades and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
+        <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. The grey candles after the live one are the forecast for each coming candle (box 50%, line 80%), inside the dashed 95% range.</li>
         <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Live track record</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
@@ -114,6 +162,7 @@
     <footer class="foot">
       <p id="status" class="status" role="status">Loading market data…</p>
       <p><b>Not financial advice.</b> Ranges are estimates of what is likely, not promises. Prices can and do move outside them.</p>
+      <p>Charts by <a href="https://www.tradingview.com/" rel="noopener" target="_blank">TradingView</a> Lightweight Charts™ (Apache 2.0).</p>
     </footer>
   </main>
   <script type="module" src="app.js"></script>

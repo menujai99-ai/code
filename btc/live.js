@@ -1,22 +1,30 @@
 // Live price feed over WebSocket, with fallbacks:
 // Binance (public mirror, then main site) → Coinbase → Kraken → REST polling.
 // Messages from every exchange are turned into the same small events:
-//   { type: 'tick', price, t, volume? }              a trade / ticker update
-//   { type: 'kline', interval, candle, closed }      Binance's own live candle
+//   { type: 'tick', price, t, qty?, side?, snapshot? }  a trade (qty in BTC,
+//                                    side = the taker's side, 'buy' or 'sell')
+//   { type: 'kline', interval, candle, closed }       Binance's own live candle
+//   { type: 'stats', high, low, open, change, volBase, volQuote }  rolling 24h
 
-const BINANCE_STREAMS = 'streams=btcusdt@aggTrade/btcusdt@kline_1h/btcusdt@kline_1d';
+const BINANCE_STREAMS = 'streams=btcusdt@aggTrade/btcusdt@kline_1h/btcusdt@kline_1d/btcusdt@ticker';
 
 export function parseBinance(msg) {
   const d = msg?.data ?? msg;
-  if (d?.e === 'aggTrade') return [{ type: 'tick', price: +d.p, t: d.T }];
+  if (d?.e === 'aggTrade') {
+    // m: the buyer was the maker, so the taker sold.
+    return [{ type: 'tick', price: +d.p, t: d.T, qty: +d.q, side: d.m ? 'sell' : 'buy' }];
+  }
   if (d?.e === 'kline') {
     const k = d.k;
     return [{
       type: 'kline',
       interval: k.i,
       closed: !!k.x,
-      candle: { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.q },
+      candle: { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.q, vb: +k.v },
     }];
+  }
+  if (d?.e === '24hrTicker') {
+    return [{ type: 'stats', high: +d.h, low: +d.l, open: +d.o, change: +d.P / 100, volBase: +d.v, volQuote: +d.q }];
   }
   return [];
 }
@@ -25,14 +33,41 @@ export function parseCoinbase(msg) {
   if (msg?.type !== 'ticker' || msg.product_id !== 'BTC-USD') return [];
   const price = +msg.price;
   const t = Date.parse(msg.time) || Date.now();
-  const size = +msg.last_size;
-  return [{ type: 'tick', price, t, volume: Number.isFinite(size) ? size * price : 0 }];
+  const qty = +msg.last_size;
+  const open = +msg.open_24h;
+  const events = [{
+    type: 'tick', price, t,
+    qty: Number.isFinite(qty) ? qty : 0,
+    // Coinbase reports the maker's side; the taker took the other one.
+    side: msg.side === 'sell' ? 'buy' : msg.side === 'buy' ? 'sell' : undefined,
+  }];
+  if (open > 0) {
+    const volBase = +msg.volume_24h;
+    events.push({ type: 'stats', high: +msg.high_24h, low: +msg.low_24h, open, change: price / open - 1, volBase, volQuote: volBase * price });
+  }
+  return events;
 }
 
 export function parseKraken(msg) {
-  if (msg?.channel !== 'ticker' || !Array.isArray(msg.data)) return [];
-  const t = Date.parse(msg.timestamp) || Date.now();
-  return msg.data.filter((d) => d.symbol === 'BTC/USD').map((d) => ({ type: 'tick', price: +d.last, t }));
+  if (!Array.isArray(msg?.data)) return [];
+  const rows = msg.data.filter((d) => d.symbol === 'BTC/USD');
+  if (msg.channel === 'trade') {
+    return rows.map((d) => ({
+      type: 'tick', price: +d.price, t: Date.parse(d.timestamp) || Date.now(), qty: +d.qty, side: d.side,
+      snapshot: msg.type === 'snapshot', // recent trades sent on subscribing
+    }));
+  }
+  if (msg.channel === 'ticker') {
+    const t = Date.parse(msg.timestamp) || Date.now();
+    return rows.flatMap((d) => [
+      { type: 'tick', price: +d.last, t },
+      {
+        type: 'stats', high: +d.high, low: +d.low, open: +d.last - +d.change, change: +d.change_pct / 100,
+        volBase: +d.volume, volQuote: +d.volume * +d.vwap,
+      },
+    ]);
+  }
+  return [];
 }
 
 export const FEEDS = [
@@ -41,22 +76,36 @@ export const FEEDS = [
   {
     name: 'Coinbase',
     url: 'wss://ws-feed.exchange.coinbase.com',
-    subscribe: { type: 'subscribe', product_ids: ['BTC-USD'], channels: ['ticker', 'heartbeat'] },
+    subscribe: [{ type: 'subscribe', product_ids: ['BTC-USD'], channels: ['ticker', 'heartbeat'] }],
     parse: parseCoinbase,
   },
   {
     name: 'Kraken',
     url: 'wss://ws.kraken.com/v2',
-    subscribe: { method: 'subscribe', params: { channel: 'ticker', symbol: ['BTC/USD'] } },
+    subscribe: [
+      { method: 'subscribe', params: { channel: 'ticker', symbol: ['BTC/USD'] } },
+      { method: 'subscribe', params: { channel: 'trade', symbol: ['BTC/USD'], snapshot: true } },
+    ],
     parse: parseKraken,
   },
 ];
 
 // ---------- Candles from live data ----------
 
+const DAY = 24 * 3600e3;
+export const WEEK = 7 * DAY;
+const MONDAY = 4 * DAY; // 1970-01-05 was a Monday; weekly candles open Monday 00:00 UTC
+
+// Start time of the candle of length `step` that contains time t.
+export function bucketStart(t, step) {
+  if (step === WEEK) return Math.floor((t - MONDAY) / WEEK) * WEEK + MONDAY;
+  return Math.floor(t / step) * step;
+}
+
 // Fold a trade into the candle series (oldest first). When the trade falls past
-// the last candle, a new candle is started. Returns true if a candle closed.
-export function applyTick(candles, step, price, t, volume = 0) {
+// the last candle, a new candle is started. qty is in BTC; v keeps the volume
+// in USD and vb in BTC. Returns true if a candle closed.
+export function applyTick(candles, step, price, t, qty = 0) {
   if (!candles.length || !(price > 0)) return false;
   const last = candles[candles.length - 1];
   if (t < last.t) return false; // late trade for a candle already replaced
@@ -64,11 +113,14 @@ export function applyTick(candles, step, price, t, volume = 0) {
     last.c = price;
     last.h = Math.max(last.h, price);
     last.l = Math.min(last.l, price);
-    last.v += volume;
+    last.v += price * qty;
+    last.vb = (last.vb || 0) + qty;
     return false;
   }
-  const start = Math.floor(t / step) * step;
-  candles.push({ t: start, o: last.c, h: Math.max(last.c, price), l: Math.min(last.c, price), c: price, v: volume });
+  candles.push({
+    t: bucketStart(t, step), o: last.c, h: Math.max(last.c, price), l: Math.min(last.c, price), c: price,
+    v: price * qty, vb: qty,
+  });
   return true;
 }
 
@@ -83,6 +135,25 @@ export function upsertCandle(candles, candle) {
   }
   candles.splice(i, 0, { ...candle });
   return true;
+}
+
+// Merge candles into longer ones (e.g. 1h → 4h, 1d → 1w).
+export function resample(candles, step) {
+  const out = [];
+  for (const c of candles) {
+    const t = bucketStart(c.t, step);
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, c.h);
+      last.l = Math.min(last.l, c.l);
+      last.c = c.c;
+      last.v += c.v || 0;
+      last.vb += c.vb || 0;
+    } else {
+      out.push({ t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v || 0, vb: c.vb || 0 });
+    }
+  }
+  return out;
 }
 
 // ---------- Connection ----------
@@ -172,7 +243,7 @@ export class LiveFeed {
     this.ws = ws;
     let gotData = false;
     ws.onopen = () => {
-      if (this.feed.subscribe) ws.send(JSON.stringify(this.feed.subscribe));
+      for (const m of this.feed.subscribe || []) ws.send(JSON.stringify(m));
     };
     ws.onmessage = (e) => {
       let msg;
