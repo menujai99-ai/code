@@ -36,7 +36,8 @@ const state = {
   feed: null,
   feedState: 'connecting',
   feedName: null,
-  lastTrade: 0,
+  lastTrade: 0, // when the last price update arrived (local clock)
+  lastTickAt: 0, // when the last individual trade arrived
   shownPrice: NaN,
   hiddenAt: 0,
   background: null,
@@ -64,6 +65,8 @@ const usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD'
 const usd2 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
 const compact = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 2 });
 const money = (x) => (Math.abs(x) >= 1000 ? usd0 : usd2).format(x);
+const cents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const clock = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const signedPct = (x, d = 1) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(d)}%`;
 const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const dayMonth = (t) => new Date(t).toLocaleDateString([], { day: 'numeric', month: 'numeric' });
@@ -200,7 +203,7 @@ function onLive(ev) {
   const { hourly, daily } = state.market;
   if (ev.type === 'tick') {
     state.price = ev.price;
-    state.lastTrade = Date.now();
+    state.lastTrade = state.lastTickAt = Date.now();
     const closedH = applyTick(hourly, HOUR, ev.price, ev.t, ev.volume || 0);
     const closedD = applyTick(daily, DAY, ev.price, ev.t, ev.volume || 0);
     if (closedH || closedD) scheduleRefit(true);
@@ -209,6 +212,12 @@ function onLive(ev) {
     if (!series) return;
     const added = upsertCandle(series, ev.candle);
     if (ev.closed || added) scheduleRefit(false);
+    // The open candle's close is the latest trade price, so it keeps the price
+    // moving even if individual trades stop arriving.
+    if (!ev.closed && Date.now() - state.lastTickAt > 3000) {
+      state.price = ev.candle.c;
+      state.lastTrade = Date.now();
+    }
   }
   scheduleRender();
 }
@@ -310,6 +319,14 @@ function renderLive() {
   const st = state.feedState;
   badge.dataset.state = st;
   text.textContent = { live: 'Live', connecting: 'Connecting…', reconnecting: 'Reconnecting…', polling: 'Every 10 s', stopped: 'Paused' }[st] || st;
+  // The dot blinks once for every price update that arrives.
+  if (state.lastTrade && state.lastTrade !== state.blinked) {
+    state.blinked = state.lastTrade;
+    badge.classList.remove('beat');
+    void badge.offsetWidth;
+    badge.classList.add('beat');
+  }
+  $('updated').textContent = state.lastTrade ? `Last trade ${clock(state.lastTrade)}` : '';
   if (!state.market || !state.model) return;
   const parts = [];
   if (st === 'live') parts.push(`Live · ${state.feedName}`, state.lastTrade ? `last trade ${ago(Date.now() - state.lastTrade)}` : 'waiting for a trade');
@@ -325,7 +342,10 @@ function renderHero() {
   const { hourly } = state.market;
   const price = state.price;
   const priceEl = $('price');
-  priceEl.textContent = money(price);
+  // Whole dollars big, cents small: quiet markets often move by cents only,
+  // and those moves should still be visible.
+  const [whole, frac] = cents.format(price).split('.');
+  priceEl.replaceChildren(whole, el('small', {}, `.${frac}`));
   if (Number.isFinite(state.shownPrice) && price !== state.shownPrice) {
     priceEl.classList.remove('flash-up', 'flash-down');
     void priceEl.offsetWidth; // restart the animation
@@ -401,14 +421,20 @@ function extraRows() {
   if (x.futures && Number.isFinite(x.futures.fundingRate)) {
     const f = x.futures.fundingRate;
     const [note, vote] = f > 0.0003 ? ['Longs paying a lot: crowded', -1] : f < 0 ? ['Shorts paying longs', 1] : ['Normal', 0];
-    rows.push({ name: 'Funding rate (8h)', value: `${(f * 100).toFixed(4)}%`, note, vote });
+    rows.push({ name: `Funding rate (8h, ${x.futures.source})`, value: `${(f * 100).toFixed(4)}%`, note, vote });
   }
-  if (x.futures && Number.isFinite(x.futures.openInterestChange)) {
+  if (x.futures && Number.isFinite(x.futures.openInterest)) {
     const c = x.futures.openInterestChange;
-    let [note, vote] = ['Little change', 0];
+    let [note, vote] = ['Bets open on BTC perpetual futures', 0];
     if (c > 0.02) [note, vote] = priceUp ? ['Rising with price: new money behind the move', 1] : ['Rising while price falls: shorts adding', -1];
     else if (c < -0.02) [note, vote] = ['Falling: positions closing', 0];
-    rows.push({ name: 'Open interest, 24h', value: signedPct(c), note: `${compact.format(x.futures.openInterest)} · ${note}`, vote });
+    else if (Number.isFinite(c)) note = 'Little change';
+    rows.push({
+      name: `Open interest (${x.futures.source})`,
+      value: Number.isFinite(c) ? `${signedPct(c)} 24h` : compact.format(x.futures.openInterest),
+      note: Number.isFinite(c) ? `${compact.format(x.futures.openInterest)} · ${note}` : note,
+      vote,
+    });
   }
   if (x.fearGreed) {
     const { now, weekAgo } = x.fearGreed;

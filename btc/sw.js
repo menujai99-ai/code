@@ -1,5 +1,6 @@
-// Offline support: cache the app shell, serve from cache, refresh in the background.
-const CACHE = 'btc-v2';
+// Offline support: always try the network first so a new version shows up
+// straight away, and fall back to the cached copy when offline.
+const CACHE = 'btc-v3';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'model.js', 'forecast.js', 'live.js', 'worker.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -8,27 +9,32 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
-    caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('btc-') && k !== CACHE).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    (async () => {
+      const old = (await caches.keys()).filter((k) => k.startsWith('btc-') && k !== CACHE);
+      await Promise.all(old.map((k) => caches.delete(k)));
+      await self.clients.claim();
+      // Replacing an older version: reload open pages so they run the new code.
+      if (old.length) {
+        for (const page of await self.clients.matchAll({ type: 'window' })) page.navigate(page.url);
+      }
+    })()
   );
 });
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // Navigations can't be re-made as a Request with options, so use the URL.
+  const req = e.request.mode === 'navigate' ? e.request.url : e.request;
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then((cached) => {
-      const network = fetch(e.request)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req, { cache: 'no-cache' })
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then((cached) => cached || Response.error()))
   );
 });

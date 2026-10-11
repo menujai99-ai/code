@@ -123,18 +123,24 @@ export async function loadMarket({ hours = 2000, days = 1000 } = {}) {
 
 // ---------- Optional extras ----------
 
+// Futures positioning from OKX: one of the few derivatives exchanges whose
+// public API both web pages (CORS) and US servers (the background job) can use.
 async function futures() {
-  const base = 'https://fapi.binance.com';
-  const [premium, oi] = await Promise.all([
-    getJSON(`${base}/fapi/v1/premiumIndex?symbol=BTCUSDT`),
-    getJSON(`${base}/futures/data/openInterestHist?symbol=BTCUSDT&period=1h&limit=25`).catch(() => null),
+  const base = 'https://www.okx.com/api/v5';
+  const [funding, swap, history] = await Promise.all([
+    getJSON(`${base}/public/funding-rate?instId=BTC-USDT-SWAP`),
+    getJSON(`${base}/public/open-interest?instType=SWAP&instId=BTC-USDT-SWAP`).catch(() => null),
+    getJSON(`${base}/rubik/stat/contracts/open-interest-volume?ccy=BTC&period=1H`).catch(() => null),
   ]);
-  const out = { fundingRate: +premium.lastFundingRate };
-  if (Array.isArray(oi) && oi.length > 1) {
-    const first = +oi[0].sumOpenInterestValue;
-    const last = +oi[oi.length - 1].sumOpenInterestValue;
-    out.openInterest = last;
-    out.openInterestChange = first > 0 ? last / first - 1 : NaN;
+  const out = { source: 'OKX', fundingRate: +funding.data[0].fundingRate };
+  const level = +swap?.data?.[0]?.oiUsd;
+  if (level > 0) out.openInterest = level;
+  // Hourly history, newest first: [time, open interest (USD), volume (USD)].
+  const rows = history?.data;
+  if (Array.isArray(rows) && rows.length > 24) {
+    const latest = +rows[0][1];
+    const dayAgo = +rows[24][1];
+    if (latest > 0 && dayAgo > 0) out.openInterestChange = latest / dayAgo - 1;
   }
   return out;
 }
