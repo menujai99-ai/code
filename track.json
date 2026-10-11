@@ -1,24 +1,24 @@
 {
- "updatedAt": 1791735151240,
+ "updatedAt": 1791750109854,
  "since": 1791724121236,
  "horizons": {
   "1h": {
-   "count": 2,
-   "in50": 1,
-   "in80": 1,
-   "in95": 1,
+   "count": 3,
+   "in50": 2,
+   "in80": 2,
+   "in95": 2,
    "called": 0,
    "hits": 0,
-   "ups": 2
+   "ups": 3
   },
   "4h": {
-   "count": 0,
-   "in50": 0,
-   "in80": 0,
-   "in95": 0,
-   "called": 0,
-   "hits": 0,
-   "ups": 0
+   "count": 3,
+   "in50": 1,
+   "in80": 1,
+   "in95": 2,
+   "called": 3,
+   "hits": 2,
+   "ups": 2
   },
   "24h": {
    "count": 0,
