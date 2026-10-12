@@ -1,12 +1,12 @@
 {
- "updatedAt": 1791750109854,
+ "updatedAt": 1791763261913,
  "since": 1791724121236,
  "horizons": {
   "1h": {
-   "count": 3,
-   "in50": 2,
-   "in80": 2,
-   "in95": 2,
+   "count": 4,
+   "in50": 3,
+   "in80": 3,
+   "in95": 3,
    "called": 0,
    "hits": 0,
    "ups": 3
