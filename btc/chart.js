@@ -407,6 +407,8 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
   const midLine = chart.addSeries(LineSeries, { ...quiet, color: theme.ghostLine, lineWidth: 1, lineStyle: LineStyle.Dotted, priceFormat });
   const cone = new Cone();
   ghostSeries.attachPrimitive(cone);
+  let planLines = []; // [{ price, title, kind }] for the trade planner
+  let planHandles = [];
   const markers = new HorizonMarkers();
   candles.attachPrimitive(markers);
   let horizons = [];
@@ -700,6 +702,20 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
       }));
     },
 
+    // Trade planner levels as dashed price lines: [{ price, title, kind: 'entry' | 'stop' | 'target' }].
+    setPlanLines(list) {
+      const next = (list || []).filter((l) => Number.isFinite(l.price));
+      const same = next.length === planLines.length && next.every((l, i) => l.price === planLines[i].price && l.title === planLines[i].title && l.kind === planLines[i].kind);
+      if (same && planHandles.length === next.length) return;
+      for (const h of planHandles) candles.removePriceLine(h);
+      planLines = next;
+      const color = { entry: theme.ghostLine, stop: theme.down, target: theme.up };
+      planHandles = next.map((l) => candles.createPriceLine({
+        price: l.price, title: l.title, color: color[l.kind] || theme.ghostLine,
+        lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true,
+      }));
+    },
+
     setMain(kind) {
       mainKind = kind;
       if (bars.length) syncCandles();
@@ -737,6 +753,11 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
       midLine.applyOptions({ color: theme.ghostLine });
       cone.set(cone.points, { line: theme.cone, fill: theme.coneFill });
       if (bars.length) api.setHorizons(horizons, markers.price);
+      const lines = planLines;
+      planLines = [];
+      planHandles.forEach((h) => candles.removePriceLine(h));
+      planHandles = [];
+      api.setPlanLines(lines);
       if (bars.length) syncCandles();
       computeIndicators();
       pushIndicators(0);
@@ -750,6 +771,7 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
         ghosts: ghostSeries.data().length,
         cone: cone.points.length,
         markers: markers.items.map((m) => m.key),
+        planLines: planLines.map((l) => `${l.title} ${l.price}`),
         markerX: markers.items.map((m) => xAt(chart.timeScale(), markers.lastIndex() + m.bars)),
         lastX: bars.length ? chart.timeScale().timeToCoordinate(sec(bars[bars.length - 1].t)) : null,
         chips: [...farChips.children].map((c) => c.textContent),

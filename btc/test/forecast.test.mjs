@@ -1,7 +1,9 @@
 // Run with: node --test btc/test/*.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildModel, forecastFrom, bandsAt, forecastBars, signalFor, MAX_HOURS } from '../forecast.js';
+import {
+  buildModel, forecastFrom, bandsAt, forecastBars, signalFor, MAX_HOURS, touchOdds, suggestLevels, plannerReplay,
+} from '../forecast.js';
 import { garchPath } from './synthetic.mjs';
 
 const H = 3600e3;
@@ -90,3 +92,63 @@ test('signal: the live track record wins once it has enough checked predictions'
   const oldFormat = { count: 100, called: 80, hits: 52 }; // track.json from before `ups` was saved
   assert.equal(signalFor({ pUp: 0.6, replay, live: oldFormat }).source, 'replay');
 });
+
+// ---------- Trade planner ----------
+
+// A copy of the model with no direction lean, so long and short are mirror images.
+const flat = { ...model, pUp: { '1h': 0.5, '4h': 0.5, '24h': 0.5, '7d': 0.5 } };
+
+test('touchOdds: probabilities add up, and the same seed gives the same answer', () => {
+  const lv = suggestLevels(model, price, 'long', 4);
+  const a = touchOdds(model, { side: 'long', entry: price, ...lv, hours: 4 });
+  const b = touchOdds(model, { side: 'long', entry: price, ...lv, hours: 4 });
+  close(a.pTarget + a.pStop + a.pNeither, 1, 1e-9);
+  assert.deepEqual(a, b);
+  assert.equal(touchOdds(model, { side: 'long', entry: price, stop: price * 1.01, target: price * 1.02, hours: 4 }), null, 'a long needs its stop below the entry');
+  assert.equal(touchOdds(model, { side: 'short', entry: price, stop: price * 0.99, target: price * 0.98, hours: 4 }), null, 'a short needs its stop above the entry');
+});
+
+test('touchOdds: equal distances with no lean are close to a coin flip', () => {
+  const d = bandsAt(flat, price, 4).sd * price;
+  const o = touchOdds(flat, { side: 'long', entry: price, stop: price - d, target: price + d, hours: 4, feePct: 0, n: 20000 });
+  assert.ok(Math.abs(o.pTarget - o.pStop) < 0.03, `${o.pTarget} vs ${o.pStop}`);
+  assert.ok(Math.abs(o.expR) < 0.04, `no fees, no lean: about zero (${o.expR})`);
+});
+
+test('touchOdds: a wider stop is hit less often, fees lower the expected result, longer windows reach more', () => {
+  const d = bandsAt(flat, price, 4).sd * price;
+  const base = { side: 'long', entry: price, target: price + d, hours: 4, feePct: 0 };
+  const near = touchOdds(flat, { ...base, stop: price - 0.5 * d });
+  const far = touchOdds(flat, { ...base, stop: price - 2 * d });
+  assert.ok(far.pStop < near.pStop, `${far.pStop} < ${near.pStop}`);
+  const fees = touchOdds(flat, { ...base, stop: price - d, feePct: 0.001 });
+  const free = touchOdds(flat, { ...base, stop: price - d });
+  assert.ok(fees.expR < free.expR - 0.05, `${fees.expR} < ${free.expR}`);
+  const short = touchOdds(flat, { ...base, stop: price - d, hours: 1 });
+  assert.ok(short.pNeither > free.pNeither, 'less time: more trades end with neither level reached');
+});
+
+test('suggestLevels: stop past the 80% range, target at the 50% edge, mirrored for a short', () => {
+  for (const h of [1, 4, 24]) {
+    const b = bandsAt(model, price, h);
+    const L = suggestLevels(model, price, 'long', h);
+    const S = suggestLevels(model, price, 'short', h);
+    assert.ok(L.stop <= b.lo80 && L.stop > b.lo95 && L.target >= b.hi50 && L.target < b.hi80, `long ${h}h`);
+    assert.ok(S.stop >= b.hi80 && S.stop < b.hi95 && S.target <= b.lo50 && S.target > b.lo80, `short ${h}h`);
+  }
+});
+
+test('plannerReplay: the predicted odds match what happened on the GARCH path', () => {
+  const r = plannerReplay(model);
+  for (const key of ['4h', '24h']) {
+    const x = r[key];
+    assert.ok(x.n >= 300, `${key}: ${x.n} trades`);
+    close(x.target + x.stop + x.neither, 1, 1e-9);
+    assert.ok(Math.abs(x.target - x.predTarget) < 0.08, `${key} target first: ${x.target} vs ${x.predTarget}`);
+    assert.ok(Math.abs(x.stop - x.predStop) < 0.08, `${key} stop first: ${x.stop} vs ${x.predStop}`);
+  }
+});
+
+function close(a, b, tol) {
+  assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
+}

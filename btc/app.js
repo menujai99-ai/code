@@ -6,7 +6,9 @@
 
 import { loadMarket, loadExtras, loadBackground, STEP } from './data.js';
 import { indicatorSnapshot } from './model.js';
-import { buildModel, forecastFrom, forecastBars, signalFor, HORIZONS } from './forecast.js';
+import {
+  buildModel, forecastFrom, forecastBars, signalFor, HORIZONS, touchOdds, suggestLevels, plannerReplay, PLAN_HOURS,
+} from './forecast.js';
 import { LiveFeed, applyTick, upsertCandle } from './live.js';
 import { createBinanceChart, MAIN_KINDS, SUB_KINDS } from './chart.js';
 
@@ -22,6 +24,7 @@ const MAX_BARS = 5000;
 const TRADE_ROWS = 20;
 const INTERVAL_KEY = 'btc.interval.v1';
 const INDICATORS_KEY = 'btc.indicators.v1';
+const PLAN_KEY = 'btc.plan.v1';
 
 // Candle lengths, and how many forecast (ghost) candles each one shows.
 const INTERVALS = {
@@ -71,7 +74,24 @@ const state = {
   lastTickAt: 0, // when the last individual trade arrived
   hiddenAt: 0,
   background: null,
+  plan: planFrom(load(PLAN_KEY, {})),
 };
+
+// Trade planner settings. entry / stop / target are null while they follow
+// the live price and the suggested levels; only the settings are remembered.
+function planFrom(saved) {
+  const num = (x, lo, hi, d) => (Number.isFinite(x) && x >= lo && x <= hi ? x : d);
+  return {
+    side: saved.side === 'short' ? 'short' : 'long',
+    hours: PLAN_HOURS.includes(saved.hours) ? saved.hours : 4,
+    risk: num(saved.risk, 0.01, 1e9, 100),
+    fee: num(saved.fee, 0, 5, 0.1),
+    lines: saved.lines !== false,
+    entry: null,
+    stop: null,
+    target: null,
+  };
+}
 
 function load(key, fallback) {
   try {
@@ -145,7 +165,9 @@ function fitModel(hourly, daily) {
   const direct = () => new Promise((resolve, reject) => {
     setTimeout(() => {
       try {
-        resolve(buildModel(hourly, daily));
+        const model = buildModel(hourly, daily);
+        model.planner = plannerReplay(model);
+        resolve(model);
       } catch (err) {
         reject(err);
       }
@@ -360,6 +382,7 @@ function render(full = false) {
   renderChartLive();
   renderPathTable();
   renderSignal();
+  renderPlanner();
   renderCards();
   renderIndicators();
   if (full) renderBacktest();
@@ -514,6 +537,173 @@ function renderSignal() {
   mini.className = `signal-mini ${head.className.replace('signal-head', '').trim()}`;
   mini.textContent = !leaning.length ? 'Signal: no clear edge ›' : sides.size > 1 ? 'Signal: mixed ›'
     : `Signal: leaning ${SIDE[[...sides][0]].word.toLowerCase()} (${leaning.map((x) => x.hz.key).join(', ')}) ›`;
+}
+
+// ---------- Trade planner ----------
+
+const plainNum = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
+const parseNum = (text) => {
+  const x = parseFloat(String(text).replace(/[,$\s]/g, ''));
+  return Number.isFinite(x) ? x : null;
+};
+const signedR = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(2)}R`;
+const signedMoney = (x) => `${x >= 0 ? '+' : '−'}${money(Math.abs(x))}`;
+
+// Shows a value in an input unless the user is typing in it.
+function showInput(id, value, edited) {
+  const input = $(id);
+  input.classList.toggle('edited', edited);
+  if (document.activeElement !== input) input.value = Number.isFinite(value) ? plainNum.format(value) : '';
+}
+
+function planRow(name, value, note, cls = '') {
+  return el('tr', {},
+    el('td', {}, el('div', { class: 'r-name' }, name), note ? el('div', { class: 'r-note' }, note) : null),
+    el('td', { class: `r-val ${cls}` }, el('b', {}, value)));
+}
+
+function savePlan() {
+  const { side, hours, risk, fee, lines } = state.plan;
+  save(PLAN_KEY, { side, hours, risk, fee, lines });
+}
+
+function renderPlanner() {
+  const card = $('plan-card');
+  const m = state.model;
+  if (!m || !state.market || !Number.isFinite(state.price)) {
+    card.hidden = true;
+    chart.setPlanLines([]);
+    return;
+  }
+  card.hidden = false;
+  const p = state.plan;
+  const key = `${p.hours}h`;
+  for (const b of card.querySelectorAll('[data-side]')) b.setAttribute('aria-pressed', String(b.dataset.side === p.side));
+  for (const b of card.querySelectorAll('[data-ph]')) b.setAttribute('aria-pressed', String(Number(b.dataset.ph) === p.hours));
+  const entry = p.entry ?? state.price;
+  const sug = suggestLevels(m, entry, p.side, p.hours);
+  const stop = p.stop ?? sug.stop;
+  const target = p.target ?? sug.target;
+  showInput('plan-entry', entry, p.entry != null);
+  showInput('plan-stop', stop, p.stop != null);
+  showInput('plan-target', target, p.target != null);
+  showInput('plan-risk', p.risk, false);
+  showInput('plan-fee', p.fee, false);
+  $('plan-lines').checked = p.lines;
+  $('plan-reset').hidden = p.entry == null && p.stop == null && p.target == null;
+
+  const odds = touchOdds(m, { side: p.side, entry, stop, target, hours: p.hours, feePct: p.fee / 100 });
+  const err = $('plan-error');
+  err.hidden = !!odds;
+  if (!odds) {
+    err.textContent = p.side === 'long'
+      ? 'For a long, the stop must be below the entry and the target above it.'
+      : 'For a short, the stop must be above the entry and the target below it.';
+    $('plan-rows').replaceChildren();
+    $('plan-verdict').textContent = '';
+    chart.setPlanLines([]);
+    return;
+  }
+  const size = p.risk / odds.risk; // BTC
+  const gain = Math.abs(target - entry);
+  const loss = Math.abs(entry - stop);
+  const evCls = odds.expR > 0.05 ? 'up' : odds.expR < -0.05 ? 'down' : '';
+  $('plan-rows').replaceChildren(el('tbody', {},
+    planRow('Target first', pct0(odds.pTarget), `the price reaches ${money(target)} before the stop`, 'up'),
+    planRow('Stop first', pct0(odds.pStop), `the price reaches ${money(stop)} before the target`, 'down'),
+    planRow(`Neither within ${key}`, pct0(odds.pNeither), 'you close at the market price then'),
+    planRow('Reward : risk', `${odds.rr.toFixed(2)} : 1`, `+${money(gain)} vs −${money(loss)} per BTC, before fees`),
+    planRow('Position size', `${size >= 1 ? size.toFixed(3) : size.toPrecision(3)} BTC`,
+      `≈ ${money(size * entry)}; a stop-out loses ${money(p.risk)} including fees`),
+    planRow('Expected result', signedR(odds.expR),
+      `≈ ${signedMoney(odds.expR * p.risk)} per trade on average, after ${plainNum.format(p.fee)}% fees each way`, evCls)));
+
+  // Verdict: positive expectation only counts where the model has beaten guessing.
+  const track = state.background?.track?.horizons || {};
+  const sig = signalFor({ pUp: m.pUp[key], replay: m.tests[key], live: track[key] });
+  const wanted = p.side === 'long' ? 'buy' : 'sell';
+  const feeR = ((p.fee / 100) * 2 * entry) / odds.risk;
+  let verdict;
+  let vCls = '';
+  if (odds.expR < -0.05) {
+    verdict = `Skip: after fees this loses about ${Math.abs(odds.expR).toFixed(2)}R per trade on average.`;
+    if (feeR > 0.15) verdict += ` Fees alone cost ${feeR.toFixed(2)}R here; a longer window or wider levels make them matter less.`;
+    vCls = 'down';
+  } else if (odds.expR <= 0.05) {
+    verdict = 'About break-even after fees: no edge either way.';
+  } else if (sig.lean === wanted) {
+    verdict = `Positive expectation (${signedR(odds.expR)}), and the model has beaten guessing at ${key}. Still a small edge: keep the size small.`;
+    vCls = 'up';
+  } else {
+    verdict = `Slightly positive on paper (${signedR(odds.expR)}), but the model hasn’t beaten guessing at ${key}: treat it as break-even at best.`;
+  }
+  const v = $('plan-verdict');
+  v.textContent = verdict;
+  v.className = `plan-verdict ${vCls}`;
+
+  const r = m.planner?.[key];
+  $('plan-check').textContent = r && r.n
+    ? `Checked on ${r.n} past ${key} trades with the suggested levels (long and short, ${plainNum.format(r.feePct * 100)}% fees, no direction lean): ` +
+      `target first ${pct0(r.target)} (predicted ${pct0(r.predTarget)}), stop first ${pct0(r.stop)} (predicted ${pct0(r.predStop)}), ` +
+      `average ${signedR(r.r)} (predicted ${signedR(r.predR)}). Stops are assumed to fill at the stop price.`
+    : '';
+
+  chart.setPlanLines(p.lines ? [
+    ...(p.entry != null ? [{ price: entry, title: 'Entry', kind: 'entry' }] : []),
+    { price: stop, title: 'Stop', kind: 'stop' },
+    { price: target, title: 'Target', kind: 'target' },
+  ] : []);
+}
+
+function setupPlanner() {
+  const p = state.plan;
+  const card = $('plan-card');
+  const again = () => {
+    savePlan();
+    renderPlanner();
+  };
+  for (const b of card.querySelectorAll('[data-side]')) {
+    b.addEventListener('click', () => {
+      p.side = b.dataset.side;
+      p.stop = p.target = null;
+      again();
+    });
+  }
+  for (const b of card.querySelectorAll('[data-ph]')) {
+    b.addEventListener('click', () => {
+      p.hours = Number(b.dataset.ph);
+      p.stop = p.target = null;
+      again();
+    });
+  }
+  for (const [id, field] of [['plan-entry', 'entry'], ['plan-stop', 'stop'], ['plan-target', 'target']]) {
+    const input = $(id);
+    input.addEventListener('input', () => {
+      const x = parseNum(input.value);
+      p[field] = x != null && x > 0 ? x : null; // cleared: back to automatic
+      renderPlanner();
+    });
+    input.addEventListener('change', renderPlanner);
+  }
+  for (const [id, field, lo, hi] of [['plan-risk', 'risk', 0.01, 1e9], ['plan-fee', 'fee', 0, 5]]) {
+    const input = $(id);
+    input.addEventListener('input', () => {
+      const x = parseNum(input.value);
+      if (x != null && x >= lo && x <= hi) {
+        p[field] = x;
+        again();
+      }
+    });
+    input.addEventListener('change', renderPlanner);
+  }
+  $('plan-reset').addEventListener('click', () => {
+    p.entry = p.stop = p.target = null;
+    renderPlanner();
+  });
+  $('plan-lines').addEventListener('change', (e) => {
+    p.lines = e.target.checked;
+    again();
+  });
 }
 
 function renderCards() {
@@ -934,6 +1124,7 @@ function showBackgroundForecast() {
 // ---------- Start ----------
 
 setupControls();
+setupPlanner();
 refreshAll();
 refreshBackground();
 setInterval(everySecond, 1000);

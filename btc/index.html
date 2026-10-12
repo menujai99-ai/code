@@ -111,6 +111,37 @@
       <p class="note"><b>Not financial advice.</b> This shows what the data says, not what you should do.</p>
     </section>
 
+    <section id="plan-card" class="card plan" aria-label="Plan a trade" hidden>
+      <h2>Plan a trade</h2>
+      <p class="note">For short-term trades: pick a side and a time window. The stop and target come from the forecast ranges; edit them to see how the odds change.</p>
+      <div class="plan-controls">
+        <div class="seg" role="group" aria-label="Side">
+          <button type="button" data-side="long">Long</button>
+          <button type="button" data-side="short">Short</button>
+        </div>
+        <div class="seg" role="group" aria-label="Time window">
+          <button type="button" data-ph="1">1h</button>
+          <button type="button" data-ph="4">4h</button>
+          <button type="button" data-ph="24">24h</button>
+        </div>
+      </div>
+      <div class="plan-fields">
+        <label>Entry<input id="plan-entry" type="text" inputmode="decimal" autocomplete="off" /></label>
+        <label>Stop<input id="plan-stop" type="text" inputmode="decimal" autocomplete="off" /></label>
+        <label>Target<input id="plan-target" type="text" inputmode="decimal" autocomplete="off" /></label>
+        <label>Max loss ($)<input id="plan-risk" type="text" inputmode="decimal" autocomplete="off" /></label>
+        <label>Fee per side (%)<input id="plan-fee" type="text" inputmode="decimal" autocomplete="off" /></label>
+      </div>
+      <p class="plan-links">
+        <button id="plan-reset" type="button" class="linkish">Reset to suggested</button>
+        <label class="plan-show"><input id="plan-lines" type="checkbox" /> Show on chart</label>
+      </p>
+      <p id="plan-error" class="plan-error" hidden></p>
+      <table id="plan-rows" class="rows plan-rows"></table>
+      <p id="plan-verdict" class="plan-verdict"></p>
+      <p id="plan-check" class="note"></p>
+    </section>
+
     <section class="card trades-card" aria-label="Market trades">
       <h2>Market Trades</h2>
       <table class="trades">
@@ -156,6 +187,7 @@
         <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
         <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles, Market Trades and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
         <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. Arrows at +1h, +4h and +24h show the likely direction and the middle 50% range, coloured only where the model has shown an edge. Tap <b>Ranges</b> for grey forecast candles (box 50%, line 80%) inside the dashed 95% range.</li>
+        <li><b>Plan a trade.</b> For a stop and a target, thousands of possible price paths are simulated in 5-minute steps (each hour's move drawn from Bitcoin's own past hourly moves, scaled by the volatility forecast) to count how often the target comes first, the stop comes first, or neither within the window. Fees are included in the result and the position size. The same planner is replayed on past hours to show how its odds held up.</li>
         <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Live track record</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
