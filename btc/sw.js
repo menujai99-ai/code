@@ -1,6 +1,6 @@
 // Offline support: always try the network first so a new version shows up
 // straight away, and fall back to the cached copy when offline.
-const CACHE = 'btc-v4';
+const CACHE = 'btc-v5';
 const ASSETS = ['./', 'index.html', 'styles.css', 'app.js', 'data.js', 'model.js', 'forecast.js', 'live.js', 'worker.js', 'chart.js', 'vendor/lightweight-charts.mjs', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (e) => {

@@ -37,7 +37,9 @@ const IN_MORE = ['1m', '5m', '1w'];
 
 const $ = (id) => document.getElementById(id);
 
-const savedIndicators = load(INDICATORS_KEY, { main: 'MA', sub: 'VOL' });
+const savedIndicators = load(INDICATORS_KEY, { main: 'MA', sub: 'VOL', ranges: false });
+const MARKER_HOURS = [['1h', 1], ['4h', 4], ['24h', 24]];
+const MAX_MARKER_BARS = 150;
 const state = {
   market: null, // { exchange, hourly, daily } (daily/hourly include the unfinished candle)
   model: null,
@@ -49,6 +51,7 @@ const state = {
   interval: INTERVALS[load(INTERVAL_KEY, '15m')] ? load(INTERVAL_KEY, '15m') : '15m',
   main: MAIN_KINDS.includes(savedIndicators.main) ? savedIndicators.main : null,
   sub: SUB_KINDS.includes(savedIndicators.sub) ? savedIndicators.sub : 'VOL',
+  ranges: savedIndicators.ranges === true, // full forecast range (grey candles + cone) on the chart
   bars: [], // chart candles, updated live
   loadedInterval: null, // the interval `bars` holds (differs from `interval` while switching)
   chartToken: 0,
@@ -672,7 +675,9 @@ async function loadChart(interval, { merge = false } = {}) {
     const fresh = await state.market.exchange.candles(interval, CHART_BARS);
     if (token !== state.chartToken) return; // a newer choice won
     if (!fresh.length) throw new Error('no candles');
-    const opts = { stepMs: STEP[interval], isDaily: interval === '1d' || interval === '1w', future: INTERVALS[interval].ghosts };
+    // Room on the right for the +24h arrow (or as far as arrows are drawn).
+    const future = Math.max(10, Math.min(MAX_MARKER_BARS, Math.ceil(DAY / STEP[interval])) + 2);
+    const opts = { stepMs: STEP[interval], isDaily: interval === '1d' || interval === '1w', future };
     if (merge && same && state.bars.length) {
       for (const c of fresh) upsertCandle(state.bars, c);
       chart.setData(state.bars, { ...opts, keepView: true });
@@ -727,14 +732,24 @@ function renderChartLive() {
   state.ghosts = state.model && cfg.ghosts
     ? forecastBars(state.model, state.price, Date.now(), last.t, STEP[state.interval], cfg.ghosts)
     : [];
-  chart.setGhosts(state.ghosts, state.price);
+  chart.setGhosts(state.ranges ? state.ghosts : [], state.price);
+  // Likely direction at +1h / +4h / +24h. Coloured only where the model has
+  // shown an edge (the same rule as the signal panel); grey otherwise.
+  const track = state.background?.track?.horizons || {};
+  const cards = state.forecast?.cards;
+  chart.setHorizons(cards ? MARKER_HOURS.map(([key]) => {
+    const c = cards[key];
+    const s = signalFor({ pUp: c.pUp, replay: state.model.tests[key], live: track[key] });
+    return { key, t: c.t, mid: c.mid, lo50: c.lo50, hi50: c.hi50, pUp: c.pUp, edge: s.lean !== 'none' };
+  }) : [], state.price);
+  const word = (c) => (c.pUp > 0.5 ? `up (${pct0(c.pUp)})` : c.pUp < 0.5 ? `down (${pct0(1 - c.pUp)})` : 'flat (50/50)');
+  let caption = cards
+    ? `Arrows: the likely direction in 1h ${word(cards['1h'])}, 4h ${word(cards['4h'])} and 24h ${word(cards['24h'])}. ` +
+      'Coloured where the model has an edge; grey means close to a coin flip.'
+    : '';
   const g = state.ghosts[state.ghosts.length - 1];
-  const caption = g
-    ? `Grey candles: the forecast for each of the next ${state.ghosts.length} ${cfg.label} candles. ` +
-      `By ${when(g.end)} the model gives 95% odds of ${money(g.lo95)} – ${money(g.hi95)}.`
-    : cfg.ghosts === 0
-      ? 'Forecasts reach 7 days ahead, so weekly candles have none. Choose 1D or shorter to see them.'
-      : '';
+  if (state.ranges && g) caption += ` Grey candles: the full range for the next ${state.ghosts.length} ${cfg.label} candles (95%: ${money(g.lo95)} – ${money(g.hi95)} by ${when(g.end)}).`;
+  else if (!state.ranges) caption += ' Turn on Ranges to see the full forecast range.';
   $('chart-caption').textContent = caption;
   $('chart').setAttribute('aria-label', `Bitcoin ${cfg.label} candlestick chart, last price ${fmt2(state.price)}. ${caption}`);
 }
@@ -749,7 +764,9 @@ function markIntervals() {
 function markIndicators() {
   for (const b of document.querySelectorAll('[data-main]')) b.setAttribute('aria-pressed', String(b.dataset.main === state.main));
   for (const b of document.querySelectorAll('[data-sub]')) b.setAttribute('aria-pressed', String(b.dataset.sub === state.sub));
-  save(INDICATORS_KEY, { main: state.main, sub: state.sub });
+  $('ranges').setAttribute('aria-pressed', String(state.ranges));
+  $('legend-ranges').hidden = !state.ranges;
+  save(INDICATORS_KEY, { main: state.main, sub: state.sub, ranges: state.ranges });
 }
 
 // ---------- Full-screen chart ----------
@@ -857,6 +874,11 @@ function setupControls() {
       markIndicators();
     });
   }
+  $('ranges').addEventListener('click', () => {
+    state.ranges = !state.ranges;
+    markIndicators();
+    if (state.model) renderChartLive();
+  });
   $('fs').addEventListener('click', () => setFull(true));
   $('fs-close').addEventListener('click', () => setFull(false));
   window.addEventListener('popstate', () => setFull(false));

@@ -188,6 +188,11 @@ a { color: var(--accent-text); }
 .key-ghost { width: 8px; height: 14px; flex: none; background:
   linear-gradient(var(--k-ghost-line), var(--k-ghost-line)) center / 1px 100% no-repeat,
   linear-gradient(var(--k-ghost-fill), var(--k-ghost-fill)) center / 8px 8px no-repeat; outline: 1px solid var(--k-ghost-line); outline-offset: -4px; }
+.key-arrow { width: 0; height: 0; flex: none; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 10px solid var(--k-ghost-line); }
+.k-far { position: absolute; right: 70px; top: 26px; z-index: 2; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.k-chip { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--surface) 90%, transparent); border: 1px solid var(--line); color: var(--k-ghost-line); font-variant-numeric: tabular-nums; }
+.k-chip.k-up { color: var(--up); }
+.k-chip.k-down { color: var(--down); }
 .key-cone { width: 16px; height: 10px; flex: none; background: var(--k-cone-fill); border-top: 1.5px dashed var(--k-cone); border-bottom: 1.5px dashed var(--k-cone); }
 .caption, .note { color: var(--muted); font-size: 13px; margin: 6px 0; }
 .table-view { padding-bottom: 10px; }

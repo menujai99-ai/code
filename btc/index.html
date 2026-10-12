@@ -88,10 +88,12 @@
           <button type="button" data-sub="MACD">MACD</button>
           <button type="button" data-sub="RSI">RSI</button>
         </div>
+        <span class="k-sep" aria-hidden="true"></span>
+        <button id="ranges" type="button" aria-pressed="false">Ranges</button>
       </div>
       <div class="legend">
-        <span><i class="key-ghost"></i>Forecast candle (box 50%, line 80%)</span>
-        <span><i class="key-cone"></i>95% range</span>
+        <span><i class="key-arrow"></i>Likely direction at +1h · +4h · +24h (line = 50% range)</span>
+        <span id="legend-ranges" hidden><i class="key-ghost"></i>Forecast candle (box 50%, line 80%) <i class="key-cone"></i>95% range</span>
       </div>
       <p id="chart-caption" class="caption"></p>
       <details class="table-view">
@@ -153,7 +155,7 @@
         <li><b>Which way it leans.</b> A small logistic-regression model trained on the indicators (EMAs, RSI, MACD, Bollinger %B, volume, on-balance volume, recent returns) estimates the chance of finishing higher. It can only nudge the middle of the range a little, and it is pulled back to 50% when the backtest shows no edge.</li>
         <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
         <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles, Market Trades and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
-        <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. The grey candles after the live one are the forecast for each coming candle (box 50%, line 80%), inside the dashed 95% range.</li>
+        <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. Arrows at +1h, +4h and +24h show the likely direction and the middle 50% range, coloured only where the model has shown an edge. Tap <b>Ranges</b> for grey forecast candles (box 50%, line 80%) inside the dashed 95% range.</li>
         <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Live track record</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>

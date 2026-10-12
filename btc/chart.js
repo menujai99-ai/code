@@ -153,6 +153,154 @@ class Cone {
   }
 }
 
+// ---------- Direction markers at +1h / +4h / +24h ----------
+
+export const MAX_MARKER_BARS = 150; // further ahead than this, a horizon shows as a chip instead
+
+// Where each future time falls, in candles after the live candle's open
+// (fractional: +1h on a 4h chart is 0.25). Far ones go to chips.
+export function horizonOffsets(stepMs, lastOpen, times) {
+  return times.map((t) => {
+    const bars = (t - lastOpen) / stepMs;
+    return { t, bars, far: bars > MAX_MARKER_BARS };
+  });
+}
+
+// x for a fractional logical index (+1h on a 4h chart sits inside a candle);
+// logicalToCoordinate only handles whole bars.
+function xAt(ts, logical) {
+  const i = Math.floor(logical);
+  const a = ts.logicalToCoordinate(i);
+  const b = ts.logicalToCoordinate(i + 1);
+  return a == null || b == null ? null : a + (b - a) * (logical - i);
+}
+
+class HorizonMarkers {
+  constructor() {
+    this.items = []; // { key, bars, mid, lo50, hi50, pUp, edge }
+    this.price = NaN;
+    this.lastTime = null; // live candle's time (seconds)
+    this.colors = {};
+    this.views = [{ zOrder: () => 'top', renderer: () => ({ draw: (target) => this.draw(target) }) }];
+  }
+  attached({ chart, series, requestUpdate }) {
+    this.chart = chart;
+    this.series = series;
+    this.requestUpdate = requestUpdate;
+  }
+  detached() {
+    this.chart = this.series = this.requestUpdate = null;
+  }
+  set(items, price, lastTime, colors) {
+    this.items = items;
+    this.price = price;
+    this.lastTime = lastTime;
+    this.colors = colors;
+    this.requestUpdate?.();
+  }
+  paneViews() {
+    return this.views;
+  }
+  lastIndex() {
+    return this.chart && this.lastTime != null ? this.chart.timeScale().timeToIndex(this.lastTime, true) : null;
+  }
+  autoscaleInfo(from, to) {
+    const last = this.lastIndex();
+    if (last == null) return null;
+    const shown = this.items.filter((m) => {
+      const i = last + m.bars;
+      return i >= from && i <= to;
+    });
+    if (!shown.length) return null;
+    return { priceRange: { minValue: Math.min(...shown.map((m) => m.lo50)), maxValue: Math.max(...shown.map((m) => m.hi50)) } };
+  }
+  draw(target) {
+    const last = this.lastIndex();
+    if (last == null || !this.items.length) return;
+    const ts = this.chart.timeScale();
+    const s = this.series;
+    const x0 = ts.logicalToCoordinate(last);
+    const y0 = s.priceToCoordinate(this.price);
+    const c = this.colors;
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      ctx.save();
+      ctx.font = '600 11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      const labels = [];
+      for (const m of this.items) {
+        const x = xAt(ts, last + m.bars);
+        const y = s.priceToCoordinate(m.mid);
+        const yHi = s.priceToCoordinate(m.hi50);
+        const yLo = s.priceToCoordinate(m.lo50);
+        if (x == null || y == null || x < -20 || x > mediaSize.width + 20) continue;
+        const dir = m.pUp > 0.5 ? 1 : m.pUp < 0.5 ? -1 : 0;
+        const col = m.edge ? (dir > 0 ? c.up : dir < 0 ? c.down : c.flat) : c.flat;
+        // dotted path from the live price
+        if (x0 != null && y0 != null) {
+          ctx.setLineDash([2, 3]);
+          ctx.lineWidth = 1;
+          ctx.strokeStyle = col;
+          ctx.globalAlpha = 0.6;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          ctx.setLineDash([]);
+        }
+        // 50% range
+        if (yHi != null && yLo != null) {
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = col;
+          ctx.beginPath();
+          ctx.moveTo(x, yHi);
+          ctx.lineTo(x, yLo);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x - 4, yHi);
+          ctx.lineTo(x + 4, yHi);
+          ctx.moveTo(x - 4, yLo);
+          ctx.lineTo(x + 4, yLo);
+          ctx.stroke();
+        }
+        // arrow at the middle estimate
+        ctx.fillStyle = col;
+        ctx.strokeStyle = c.bg;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (dir > 0) {
+          ctx.moveTo(x, y - 7); ctx.lineTo(x + 6, y + 4); ctx.lineTo(x - 6, y + 4);
+        } else if (dir < 0) {
+          ctx.moveTo(x, y + 7); ctx.lineTo(x + 6, y - 4); ctx.lineTo(x - 6, y - 4);
+        } else {
+          ctx.rect(x - 6, y - 2, 12, 4);
+        }
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fill();
+        labels.push({ text: `${m.key} ${dir > 0 ? '▲' : dir < 0 ? '▼' : '–'} ${Math.round(Math.max(m.pUp, 1 - m.pUp) * 100)}%`, x, y: (yHi ?? y) - 6, col });
+      }
+      // Labels last, on top of every line, nudged up where they would overlap.
+      const placed = [];
+      for (const l of labels) {
+        const w = ctx.measureText(l.text).width + 8;
+        const lx = Math.min(Math.max(l.x, w / 2 + 2), mediaSize.width - w / 2 - 2);
+        let ly = Math.max(14, l.y);
+        while (placed.some((p) => Math.abs(p.x - lx) < (p.w + w) / 2 && Math.abs(p.y - ly) < 15)) ly -= 16;
+        placed.push({ x: lx, y: ly, w });
+        ctx.fillStyle = this.colors.bg;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(lx - w / 2, ly - 14, w, 15);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = l.col;
+        ctx.fillText(l.text, lx, ly);
+      }
+      ctx.restore();
+    });
+  }
+}
+
 // ---------- The chart ----------
 
 function el(tag, cls) {
@@ -183,9 +331,10 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
   const legendSub = el('div', 'k-legend k-legend-sub');
   const details = el('div', 'k-details');
   const countdown = el('div', 'k-countdown');
+  const farChips = el('div', 'k-far');
   details.hidden = true;
   countdown.hidden = true;
-  container.append(host, legendMain, legendSub, details, countdown);
+  container.append(host, legendMain, legendSub, details, countdown, farChips);
 
   let theme = readTheme(container);
   let bars = []; // the app's candle array (oldest first, times in ms), updated in place
@@ -258,6 +407,9 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
   const midLine = chart.addSeries(LineSeries, { ...quiet, color: theme.ghostLine, lineWidth: 1, lineStyle: LineStyle.Dotted, priceFormat });
   const cone = new Cone();
   ghostSeries.attachPrimitive(cone);
+  const markers = new HorizonMarkers();
+  candles.attachPrimitive(markers);
+  let horizons = [];
   const mainSeries = [0, 1, 2].map(() => chart.addSeries(LineSeries, { ...quiet, lineWidth: 1, priceFormat }));
   const subHist = chart.addSeries(HistogramSeries, { ...quiet, priceFormat: { type: 'custom', formatter: fmtVol } }, 1);
   const subLines = [0, 1, 2].map(() => chart.addSeries(LineSeries, { ...quiet, lineWidth: 1 }, 1));
@@ -529,6 +681,25 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
       if (pinned != null && ghostByTime.has(pinned)) showDetails(pinned);
     },
 
+    // Likely direction at future times: [{ key, t (ms), mid, lo50, hi50, pUp, edge }].
+    // Near ones are drawn on the chart; far ones become chips at the right edge.
+    setHorizons(list, price) {
+      horizons = list;
+      const last = bars[bars.length - 1];
+      if (!last) return;
+      const offs = horizonOffsets(step, last.t, list.map((h) => h.t));
+      const near = [];
+      const far = [];
+      list.forEach((h, i) => (offs[i].far ? far : near).push({ ...h, bars: offs[i].bars }));
+      markers.set(near, price, sec(last.t), { up: theme.up, down: theme.down, flat: theme.ghostLine, bg: theme.bg });
+      farChips.replaceChildren(...far.map((h) => {
+        const dir = h.pUp > 0.5 ? 1 : h.pUp < 0.5 ? -1 : 0;
+        const chip = el('span', `k-chip ${h.edge ? (dir > 0 ? 'k-up' : dir < 0 ? 'k-down' : '') : ''}`);
+        chip.textContent = `${h.key} ${dir > 0 ? '▲' : dir < 0 ? '▼' : '–'} ${Math.round(Math.max(h.pUp, 1 - h.pUp) * 100)}% →`;
+        return chip;
+      }));
+    },
+
     setMain(kind) {
       mainKind = kind;
       if (bars.length) syncCandles();
@@ -565,6 +736,7 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
       });
       midLine.applyOptions({ color: theme.ghostLine });
       cone.set(cone.points, { line: theme.cone, fill: theme.coneFill });
+      if (bars.length) api.setHorizons(horizons, markers.price);
       if (bars.length) syncCandles();
       computeIndicators();
       pushIndicators(0);
@@ -577,6 +749,10 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
         bars: candles.data().length,
         ghosts: ghostSeries.data().length,
         cone: cone.points.length,
+        markers: markers.items.map((m) => m.key),
+        markerX: markers.items.map((m) => xAt(chart.timeScale(), markers.lastIndex() + m.bars)),
+        lastX: bars.length ? chart.timeScale().timeToCoordinate(sec(bars[bars.length - 1].t)) : null,
+        chips: [...farChips.children].map((c) => c.textContent),
         range: chart.timeScale().getVisibleLogicalRange(),
         main: mainKind,
         sub: subKind,
