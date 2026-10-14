@@ -36,3 +36,6 @@
 {"t":1791888135853,"h":"24h","target":1791974535853,"price":83386.01,"actual":83405.50677987223,"in50":true,"in80":true,"in95":true,"called":true,"hit":true}
 {"t":1791963735728,"h":"1h","target":1791967335728,"price":83437.36,"actual":83476.59649191111,"in50":true,"in80":true,"in95":true,"called":false,"hit":false}
 {"t":1791963735728,"h":"4h","target":1791978135728,"price":83437.36,"actual":83467.1402623111,"in50":true,"in80":true,"in95":true,"called":true,"hit":true}
+{"t":1791913712953,"h":"24h","target":1792000112953,"price":83200.64,"actual":81668.30704693611,"in50":false,"in80":false,"in95":true,"called":true,"hit":false}
+{"t":1791983184526,"h":"1h","target":1791986784526,"price":82730.25,"actual":82286.86525051111,"in50":false,"in80":false,"in95":true,"called":false,"hit":false}
+{"t":1791983184526,"h":"4h","target":1791997584526,"price":82730.25,"actual":81967.16009492778,"in50":false,"in80":false,"in95":true,"called":true,"hit":false}
