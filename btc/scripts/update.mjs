@@ -15,8 +15,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadMarket, loadExtras } from '../data.js';
-import { buildModel, forecastFrom, HORIZONS } from '../forecast.js';
+import { buildModel, forecastFrom } from '../forecast.js';
 import { indicatorSnapshot } from '../model.js';
+import { predictionEntry, scoreHistory, summarize, parseLines } from '../track.js';
+
+export { priceAt, scoreHistory, summarize } from '../track.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -32,68 +35,7 @@ function parseArgs(argv) {
 }
 
 function readLines(file) {
-  if (!fs.existsSync(file)) return [];
-  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).flatMap((line) => {
-    try {
-      return [JSON.parse(line)];
-    } catch {
-      return []; // skip a damaged line rather than stop
-    }
-  });
-}
-
-// Price at time t, read off the hourly closes (straight line between the two
-// closes either side of t). null if t is outside the data.
-export function priceAt(hourly, t) {
-  const closes = hourly.map((c) => ({ t: c.t + HOUR, c: c.c }));
-  for (let i = 1; i < closes.length; i++) {
-    const a = closes[i - 1];
-    const b = closes[i];
-    if (t >= a.t && t <= b.t) return a.c + ((b.c - a.c) * (t - a.t)) / (b.t - a.t);
-  }
-  return null;
-}
-
-// Score every saved prediction whose target time has passed and that hasn't
-// been scored yet.
-export function scoreHistory(history, scored, hourly, now) {
-  const done = new Set(scored.map((s) => `${s.t}|${s.h}`));
-  const lastClose = Math.min(now, hourly[hourly.length - 1].t + HOUR);
-  const fresh = [];
-  for (const run of history) {
-    for (const [h, p] of Object.entries(run.h || {})) {
-      if (done.has(`${run.t}|${h}`) || p.target > lastClose) continue;
-      const actual = priceAt(hourly, p.target);
-      if (actual == null) continue;
-      fresh.push({
-        t: run.t, h, target: p.target, price: run.price, actual,
-        in50: actual >= p.lo50 && actual <= p.hi50,
-        in80: actual >= p.lo80 && actual <= p.hi80,
-        in95: actual >= p.lo95 && actual <= p.hi95,
-        called: p.pUp !== 0.5,
-        hit: p.pUp !== 0.5 && (p.pUp > 0.5) === (actual > run.price),
-      });
-    }
-  }
-  return fresh;
-}
-
-export function summarize(scores, now) {
-  const horizons = {};
-  for (const hz of HORIZONS) {
-    const rows = scores.filter((s) => s.h === hz.key);
-    horizons[hz.key] = {
-      count: rows.length,
-      in50: rows.filter((s) => s.in50).length,
-      in80: rows.filter((s) => s.in80).length,
-      in95: rows.filter((s) => s.in95).length,
-      called: rows.filter((s) => s.called).length,
-      hits: rows.filter((s) => s.hit).length,
-      ups: rows.filter((s) => s.actual > s.price).length, // for the "always guess up" baseline
-    };
-  }
-  const since = scores.length ? Math.min(...scores.map((s) => s.t)) : now;
-  return { updatedAt: now, since, horizons };
+  return fs.existsSync(file) ? parseLines(fs.readFileSync(file, 'utf8')) : [];
 }
 
 async function loadFixture(dir) {
@@ -132,12 +74,7 @@ export async function run({ out = 'out', fixture = null, now = null } = {}) {
   };
   fs.writeFileSync(path.join(out, 'forecast.json'), `${JSON.stringify(forecast, null, 1)}\n`);
 
-  const keep = ['t', 'mid', 'lo50', 'hi50', 'lo80', 'hi80', 'lo95', 'hi95', 'pUp'];
-  const entry = { t, price, source: market.exchange.name, h: {} };
-  for (const hz of HORIZONS) {
-    const c = f.cards[hz.key];
-    entry.h[hz.key] = Object.fromEntries(keep.map((k) => [k === 't' ? 'target' : k, c[k]]));
-  }
+  const entry = predictionEntry(f.cards, price, t, market.exchange.name);
   const historyFile = path.join(out, 'history.jsonl');
   fs.appendFileSync(historyFile, `${JSON.stringify(entry)}\n`);
 

@@ -3,6 +3,7 @@
 // (futures, sentiment, on-chain) are optional and simply left out if blocked.
 
 import { resample } from './live.js';
+import { parseLines } from './track.js';
 
 const MINUTE = 60e3;
 const HOUR = 60 * MINUTE;
@@ -239,13 +240,32 @@ export async function loadExtras() {
 
 export const BACKGROUND_URL = 'https://raw.githubusercontent.com/menujai99-ai/code/btc-data';
 
+async function getText(url, ms = 12000) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    if (!res.ok) throw new Error(`${new URL(url).host} answered ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The latest forecast, the totals, and the full logs: every saved prediction
+// (history) and every checked one (scores).
 export async function loadBackground(base = BACKGROUND_URL) {
-  const [forecast, track] = await Promise.allSettled([
+  const [forecast, track, history, scores] = await Promise.allSettled([
     getJSON(`${base}/forecast.json`),
     getJSON(`${base}/track.json`),
+    getText(`${base}/history.jsonl`),
+    getText(`${base}/scores.jsonl`),
   ]);
+  const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
   return {
-    forecast: forecast.status === 'fulfilled' ? forecast.value : null,
-    track: track.status === 'fulfilled' ? track.value : null,
+    forecast: ok(forecast),
+    track: ok(track),
+    history: history.status === 'fulfilled' ? parseLines(history.value) : null,
+    scores: scores.status === 'fulfilled' ? parseLines(scores.value) : null,
   };
 }

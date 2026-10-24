@@ -11,6 +11,7 @@ import {
 } from './forecast.js';
 import { LiveFeed, applyTick, upsertCandle } from './live.js';
 import { createBinanceChart, MAIN_KINDS, SUB_KINDS } from './chart.js';
+import { predictionEntry, cardsOf, scoreHistory, predictionRows, tally, trimLog } from './track.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -25,6 +26,11 @@ const TRADE_ROWS = 20;
 const INTERVAL_KEY = 'btc.interval.v1';
 const INDICATORS_KEY = 'btc.indicators.v1';
 const PLAN_KEY = 'btc.plan.v1';
+const HISTORY_KEY = 'btc.history.v1'; // predictions made on this device
+const SCORES_KEY = 'btc.scores.v1'; // ... and how they turned out
+const HISTORY_VIEW_KEY = 'btc.historyView.v1';
+const SLOT = 15 * 60e3; // a new prediction every 15 minutes; it stays fixed in between
+const REFIT_WAIT = 2 * 60e3; // at the top of the hour, wait this long at most for the refit
 
 // Candle lengths, and how many forecast (ghost) candles each one shows.
 const INTERVALS = {
@@ -75,7 +81,25 @@ const state = {
   hiddenAt: 0,
   background: null,
   plan: planFrom(load(PLAN_KEY, {})),
+  snap: null, // the prediction on screen: { slot, t, price, model }
+  refitPending: false,
+  device: {
+    history: listFrom(load(HISTORY_KEY, [])),
+    scores: listFrom(load(SCORES_KEY, [])),
+  },
+  historyView: viewFrom(load(HISTORY_VIEW_KEY, {})),
 };
+
+function listFrom(x) {
+  return Array.isArray(x) ? x.filter((r) => r && Number.isFinite(r.t)) : [];
+}
+
+function viewFrom(saved) {
+  return {
+    source: saved.source === 'background' ? 'background' : 'device',
+    key: HORIZONS.some((hz) => hz.key === saved.key) ? saved.key : '1h',
+  };
+}
 
 // Trade planner settings. entry / stop / target are null while they follow
 // the live price and the suggested levels; only the settings are remembered.
@@ -128,7 +152,10 @@ const clock = (t) => {
   const d = new Date(t);
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 };
-const signedPct = (x, d = 1) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(d)}%`;
+const signedPct = (x, d = 1) => {
+  const v = Math.abs(x * 100).toFixed(d);
+  return `${Number(v) === 0 ? '' : x > 0 ? '+' : '−'}${v}%`;
+};
 const time = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 const when = (t) => new Date(t).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -237,7 +264,7 @@ async function refreshExtras() {
 
 async function refreshBackground() {
   state.background = await loadBackground().catch(() => null);
-  renderTrack();
+  renderHistory();
   if (state.model && state.forecast && state.market) renderSignal();
   if (!state.market) showBackgroundForecast();
 }
@@ -305,6 +332,7 @@ function setPrice(p) {
 let refitTimer = 0;
 let needSync = false;
 function scheduleRefit(sync) {
+  state.refitPending = true;
   needSync ||= sync;
   clearTimeout(refitTimer);
   refitTimer = setTimeout(refit, 4000);
@@ -335,6 +363,7 @@ async function refit() {
     console.warn('Refit failed', err);
   } finally {
     state.refitting = false;
+    state.refitPending = false;
     document.body.classList.remove('refitting');
   }
 }
@@ -363,8 +392,10 @@ function everySecond() {
     scheduleRender();
   }
   if (state.bars.length && applyTick(state.bars, STEP[state.loadedInterval], state.price, now)) scheduleRender();
+  if (state.snap && Math.floor(now / SLOT) !== state.snap.slot) scheduleRender(); // time for a new prediction
   chart.tick(now);
   renderLive();
+  renderSnapLine();
 }
 
 function setStatus(text) {
@@ -377,7 +408,7 @@ function render(full = false) {
   if (!state.market || !state.model) return;
   lastRender = Date.now();
   state.now = lastRender;
-  state.forecast = forecastFrom(state.model, state.price, state.now);
+  takeSnapshot(state.now);
   renderHeader();
   renderChartLive();
   renderPathTable();
@@ -387,6 +418,94 @@ function render(full = false) {
   renderIndicators();
   if (full) renderBacktest();
   renderLive();
+  renderSnapLine();
+}
+
+// ---------- Fixed predictions ----------
+// A prediction is made once per 15-minute slot (:00, :15, :30, :45) and then
+// held: the numbers on screen don't move with every trade. Each one is saved
+// to this device's history, so what you see is exactly what gets checked.
+
+function takeSnapshot(now) {
+  const slot = Math.floor(now / SLOT);
+  if (state.snap?.slot === slot) return;
+  // At the top of the hour the model refits on the candle that just closed:
+  // keep the old prediction a little longer so the new one uses it.
+  if (state.snap && (state.refitPending || state.refitting) && now - slot * SLOT < REFIT_WAIT) return;
+  // Reopened within the same slot: show the prediction already made.
+  const saved = state.device.history[state.device.history.length - 1];
+  if (saved?.source === 'device' && Math.floor(saved.t / SLOT) === slot) {
+    state.snap = { slot, t: saved.t, price: saved.price, model: state.model };
+    state.forecast = { price: saved.price, now: saved.t, cards: cardsOf(saved) };
+  } else {
+    state.snap = { slot, t: now, price: state.price, model: state.model };
+    state.forecast = forecastFrom(state.model, state.price, now);
+    state.device.history.push(predictionEntry(state.forecast.cards, state.price, now, 'device'));
+    saveDevice();
+  }
+  renderHistory();
+  scoreDevice();
+}
+
+// Saves the device log, dropping the oldest predictions if storage is full.
+function saveDevice() {
+  let { history, scores } = trimLog(state.device.history, state.device.scores, Date.now());
+  for (let tries = 0; tries < 6; tries++) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      localStorage.setItem(SCORES_KEY, JSON.stringify(scores));
+      break;
+    } catch {
+      ({ history, scores } = trimLog(history, scores, Date.now(), { maxEntries: Math.floor(history.length / 2) }));
+    }
+  }
+  state.device.history = history;
+  state.device.scores = scores;
+}
+
+// Checks this device's predictions whose time has come, against 15-minute
+// candles (hourly ones for anything older than those reach).
+let candles15 = { at: 0, list: [] };
+let scoring = false;
+async function scoreDevice() {
+  if (scoring || !state.market) return;
+  const { history, scores } = state.device;
+  const now = Date.now();
+  const done = new Set(scores.map((x) => `${x.t}|${x.h}`));
+  const due = history.some((run) => Object.entries(run.h || {}).some(([h, p]) => p.target <= now && !done.has(`${run.t}|${h}`)));
+  if (!due) return;
+  scoring = true;
+  try {
+    if (now - candles15.at > 5 * 60e3) {
+      try {
+        candles15 = { at: now, list: await state.market.exchange.candles('15m', 1000) };
+      } catch {
+        candles15 = { at: now, list: [] };
+      }
+    }
+    const fine = scoreHistory(history, scores, finished(candles15.list, STEP['15m'], now), now, STEP['15m']);
+    const coarse = scoreHistory(history, [...scores, ...fine], finished(state.market.hourly, HOUR, now), now, HOUR);
+    if (fine.length || coarse.length) {
+      state.device.scores = [...scores, ...fine, ...coarse];
+      saveDevice();
+      renderHistory();
+    }
+  } finally {
+    scoring = false;
+  }
+}
+
+// "Prediction made 14:15 at 83,100.00 · next update 14:30 (in 7 min)"
+function renderSnapLine() {
+  const line = $('snap-line');
+  if (!state.snap) {
+    line.hidden = true;
+    return;
+  }
+  line.hidden = false;
+  const next = (state.snap.slot + 1) * SLOT;
+  const left = Math.max(0, Math.ceil((next - Date.now()) / 60e3));
+  line.textContent = `Prediction made ${time(state.snap.t)} at ${fmt2(state.snap.price)} · fixed until ${time(next)} (${left} min)`;
 }
 
 function ago(ms) {
@@ -496,7 +615,7 @@ function renderSignal() {
   const track = state.background?.track?.horizons || {};
   const sigs = HORIZONS.map((hz) => ({
     hz,
-    s: signalFor({ pUp: state.model.pUp[hz.key], replay: state.model.tests[hz.key], live: track[hz.key] }),
+    s: signalFor({ pUp: state.forecast.cards[hz.key].pUp, replay: state.model.tests[hz.key], live: track[hz.key] }),
   }));
   const leaning = sigs.filter((x) => x.s.lean !== 'none');
   const head = $('signal-head');
@@ -529,8 +648,8 @@ function renderSignal() {
   const d = state.forecast.cards['24h'];
   const w = state.forecast.cards['7d'];
   $('signal-risk').textContent =
-    `If you buy now at ${fmt2(state.price)}: within 24h there's about a 10% chance it's below ${money(d.lo80)} and 2.5% below ${money(d.lo95)} ` +
-    `(within 7 days: 10% below ${money(w.lo80)}). If you sell now: 10% chance it's above ${money(d.hi80)} and 2.5% above ${money(d.hi95)} within 24h.`;
+    `If you bought at ${fmt2(state.forecast.price)} (the price when this prediction was made, ${time(state.forecast.now)}): within 24h there's about a 10% chance it's below ${money(d.lo80)} and 2.5% below ${money(d.lo95)} ` +
+    `(within 7 days: 10% below ${money(w.lo80)}). If you sold then: 10% chance it's above ${money(d.hi80)} and 2.5% above ${money(d.hi95)} within 24h.`;
   $('signal-trend').textContent = trendMomentum();
   const mini = $('signal-mini');
   mini.hidden = false;
@@ -709,30 +828,37 @@ function setupPlanner() {
 function renderCards() {
   const wrap = $('cards');
   wrap.replaceChildren();
-  const price = state.price;
+  const base = state.forecast.price ?? state.price; // the price the prediction was made at
+  const price = state.price; // live
+  const made = state.forecast.now;
   for (const hz of HORIZONS) {
     const f = state.forecast.cards[hz.key];
     const lean = leanText(f.pUp);
     const span = f.hi95 - f.lo95;
     const pos = (x) => `${((x - f.lo95) / span) * 100}%`;
     const seg = (cls, a, b) => el('i', { class: `seg ${cls}`, style: `left:${pos(a)};width:calc(${pos(b)} - ${pos(a)})` });
-    const midCh = f.mid / price - 1;
+    const midCh = f.mid / base - 1;
     const row = (label, lo, hi) =>
       el('tr', {},
         el('td', {}, label),
         el('td', {}, `${money(lo)} – ${money(hi)}`),
-        el('td', {}, `${signedPct(lo / price - 1)} / ${signedPct(hi / price - 1)}`));
+        el('td', {}, `${signedPct(lo / base - 1)} / ${signedPct(hi / base - 1)}`));
+    // Where the live price sits against this (fixed) prediction so far.
+    const inside = price >= f.lo50 && price <= f.hi50 ? 'inside the 50% range'
+      : price >= f.lo80 && price <= f.hi80 ? 'inside the 80% range'
+        : price >= f.lo95 && price <= f.hi95 ? 'inside the 95% range' : 'outside the 95% range';
     const card = el('article', { class: 'card' },
       el('div', { class: 'h-head' },
         el('span', { class: 'h-name' }, hz.label),
         el('span', { class: `lean ${lean.cls}` }, lean.text)),
       el('div', { class: 'h-mid num' }, money(f.mid), el('small', { class: Math.abs(midCh) < 5e-5 ? 'flat' : midCh > 0 ? 'up' : 'down' }, signedPct(midCh, 2))),
-      el('div', { class: 'h-sub' }, `Middle estimate for ${when(f.t)}`),
+      el('div', { class: 'h-sub' }, `Middle estimate for ${when(f.t)}${Number.isFinite(made) ? ` · made ${time(made)} at ${fmt2(base)}` : ''}`),
       el('div', { class: 'rangebar', 'aria-hidden': 'true' },
         seg('s95', f.lo95, f.hi95), seg('s80', f.lo80, f.hi80), seg('s50', f.lo50, f.hi50),
         el('i', { class: 'now', style: `left:${pos(price)}` })),
       el('table', { class: 'ranges' },
-        el('tbody', {}, row('50%', f.lo50, f.hi50), row('80%', f.lo80, f.hi80), row('95%', f.lo95, f.hi95))));
+        el('tbody', {}, row('50%', f.lo50, f.hi50), row('80%', f.lo80, f.hi80), row('95%', f.lo95, f.hi95))),
+      Number.isFinite(price) ? el('div', { class: 'h-now' }, `Now ${fmt2(price)} · ${inside} so far`) : null);
     wrap.append(card);
   }
 }
@@ -919,19 +1045,20 @@ function renderChartLive() {
   chart.sync();
   const cfg = INTERVALS[state.interval];
   const last = state.bars[state.bars.length - 1];
-  state.ghosts = state.model && cfg.ghosts
-    ? forecastBars(state.model, state.price, Date.now(), last.t, STEP[state.interval], cfg.ghosts)
+  const snap = state.snap;
+  state.ghosts = snap && cfg.ghosts
+    ? forecastBars(snap.model, snap.price, snap.t, last.t, STEP[state.interval], cfg.ghosts)
     : [];
-  chart.setGhosts(state.ranges ? state.ghosts : [], state.price);
+  chart.setGhosts(state.ranges ? state.ghosts : [], snap?.price ?? state.price);
   // Likely direction at +1h / +4h / +24h. Coloured only where the model has
   // shown an edge (the same rule as the signal panel); grey otherwise.
   const track = state.background?.track?.horizons || {};
-  const cards = state.forecast?.cards;
+  const cards = snap && state.forecast?.cards;
   chart.setHorizons(cards ? MARKER_HOURS.map(([key]) => {
     const c = cards[key];
     const s = signalFor({ pUp: c.pUp, replay: state.model.tests[key], live: track[key] });
     return { key, t: c.t, mid: c.mid, lo50: c.lo50, hi50: c.hi50, pUp: c.pUp, edge: s.lean !== 'none' };
-  }) : [], state.price);
+  }) : [], snap?.price, snap?.t);
   const word = (c) => (c.pUp > 0.5 ? `up (${pct0(c.pUp)})` : c.pUp < 0.5 ? `down (${pct0(1 - c.pUp)})` : 'flat (50/50)');
   let caption = cards
     ? `Arrows: the likely direction in 1h ${word(cards['1h'])}, 4h ${word(cards['4h'])} and 24h ${word(cards['24h'])}. ` +
@@ -1088,25 +1215,206 @@ function pctOf(n, d) {
   return d ? `${Math.round((n / d) * 100)}%` : '—';
 }
 
-function renderTrack() {
+// ---------- Prediction history ----------
+// The predictions saved on this device (or by the background job), checked
+// against the price once their time came: totals, a chart of the predicted
+// ranges with where the price actually landed, and a table.
+
+const HISTORY_SHOW = 40; // checked predictions in the chart
+const HISTORY_WAITING = 12; // and the next ones still waiting
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function svgEl(tag, attrs = {}, ...children) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  for (const c of children) if (c != null) node.append(c);
+  return node;
+}
+
+const shortWhen = (t) => {
+  const d = new Date(t);
+  const today = new Date().toDateString() === d.toDateString();
+  return today ? time(t) : d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+};
+
+const landedIn = (p, x) => (x >= p.lo50 && x <= p.hi50 ? '50%' : x >= p.lo80 && x <= p.hi80 ? '80%' : x >= p.lo95 && x <= p.hi95 ? '95%' : 'outside');
+
+function callText(r) {
+  if (r.pUp === 0.5) return '–';
+  const up = r.pUp > 0.5;
+  const sym = `${up ? '▲' : '▼'}${pct0(up ? r.pUp : 1 - r.pUp)}`;
+  return r.score ? `${sym} ${r.score.hit ? '✓' : '✗'}` : sym;
+}
+
+function historySource() {
+  if (state.historyView.source === 'device') return state.device;
+  return { history: state.background?.history || [], scores: state.background?.scores || [] };
+}
+
+function niceStep(span, n) {
+  const raw = span / n;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((x) => x >= raw);
+}
+
+function renderHistory() {
+  const v = state.historyView;
+  const card = $('history-card');
+  for (const b of card.querySelectorAll('[data-hsrc]')) b.setAttribute('aria-pressed', String(b.dataset.hsrc === v.source));
+  for (const b of card.querySelectorAll('[data-hkey]')) b.setAttribute('aria-pressed', String(b.dataset.hkey === v.key));
+  const device = v.source === 'device';
+  const { history, scores } = historySource();
+  const rows = predictionRows(history, scores, v.key);
+  const checked = rows.filter((r) => r.score);
+  const waiting = rows.filter((r) => !r.score);
   const track = state.background?.track;
-  const card = $('track-card');
-  const rows = track ? HORIZONS.filter((hz) => track.horizons?.[hz.key]?.count) : [];
-  card.hidden = !rows.length;
+  let note = device
+    ? 'Saved on this device every 15 minutes while the app is open (the fixed prediction shown above the chart), then checked against the price when its time comes.'
+    : `Saved by the background job on GitHub, which runs a few times a day even when nobody has the app open; the same for everyone.${track ? ` Last run ${when(track.updatedAt)}.` : ''}`;
+  if (!rows.length) {
+    note += device
+      ? ' Nothing saved yet: the first prediction is saved once the forecast has loaded, and checked after an hour.'
+      : state.background?.history ? ' Nothing saved yet.' : ' Its log couldn’t be loaded right now.';
+  }
+  $('history-note').textContent = note;
+  $('history-body').hidden = !rows.length;
   if (!rows.length) return;
-  const head = el('tr', {}, ...['Horizon', '50% held', '80% held', '95% held', 'Direction right', 'Checked'].map((h) => el('th', {}, h)));
-  const body = rows.map((hz) => {
-    const r = track.horizons[hz.key];
-    return el('tr', {},
-      el('td', {}, hz.key),
-      el('td', {}, pctOf(r.in50, r.count)), el('td', {}, pctOf(r.in80, r.count)), el('td', {}, pctOf(r.in95, r.count)),
-      el('td', {}, pctOf(r.hits, r.called)),
-      el('td', {}, String(r.count)));
+
+  // Totals: all checked, and the last 20.
+  const all = tally(checked.map((r) => r.score));
+  const last = tally(checked.slice(-20).map((r) => r.score));
+  const upShare = all.ups / all.count;
+  const tile = (label, value, sub) => el('div', { class: 'tile' },
+    el('div', { class: 'tile-label' }, label), el('div', { class: 'tile-value' }, value), el('div', { class: 'tile-sub' }, sub));
+  const held = (label, k, aim) => tile(`${label} range held`, pctOf(all[k], all.count),
+    `aim ${aim} · last ${last.count}: ${pctOf(last[k], last.count)}`);
+  $('history-tiles').replaceChildren(...(checked.length ? [
+    tile('Direction right', all.called ? pctOf(all.hits, all.called) : '—', all.called
+      ? `of ${all.called} calls · always guessing ${upShare >= 0.5 ? 'up' : 'down'}: ${pct0(Math.max(upShare, 1 - upShare))}`
+      : 'no calls yet (all 50/50)'),
+    held('50%', 'in50', '50%'),
+    held('80%', 'in80', '80%'),
+    held('95%', 'in95', '95%'),
+  ] : [el('p', { class: 'note' }, `None checked yet: the first ${v.key} prediction is checked after ${shortWhen(waiting[0].target)}.`)]));
+
+  renderHistoryChart([...checked.slice(-HISTORY_SHOW), ...waiting.slice(0, HISTORY_WAITING)], v.key);
+
+  const next = waiting[0];
+  $('history-pending').textContent = `${checked.length} checked · ${waiting.length} waiting` + (next
+    ? next.target <= Date.now() ? ' (checked on the next update)' : ` · next check after ${shortWhen(next.target)}`
+    : '');
+
+  const head = el('tr', {}, ...['Made', 'Price then', `Price at +${v.key}`, 'Landed in', 'Call'].map((h) => el('th', {}, h)));
+  const body = checked.slice(-20).reverse().map((r) => el('tr', {},
+    el('td', {}, shortWhen(r.t)),
+    el('td', {}, money(r.price)),
+    el('td', {}, money(r.score.actual)),
+    el('td', { class: landedIn(r, r.score.actual) === 'outside' ? 'miss' : '' }, landedIn(r, r.score.actual)),
+    el('td', {}, callText(r))));
+  $('history-table').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
+  $('history-table').hidden = !body.length;
+}
+
+// The predicted 80% and 50% ranges, one column per prediction (oldest left),
+// with a dot where the price actually was at the target time.
+function renderHistoryChart(items, key) {
+  const box = $('history-chart');
+  const W = Math.max(280, box.clientWidth || 340);
+  const H = 190;
+  const m = { l: 62, r: 6, t: 10, b: 24 };
+  const pw = W - m.l - m.r;
+  const ph = H - m.t - m.b;
+  const prices = items.flatMap((r) => [r.lo80, r.hi80, ...(r.score ? [r.score.actual] : [])]);
+  let lo = Math.min(...prices);
+  let hi = Math.max(...prices);
+  const pad = (hi - lo) * 0.06 || hi * 0.001;
+  lo -= pad;
+  hi += pad;
+  const n = items.length;
+  const bw = pw / n;
+  const x = (i) => m.l + bw * (i + 0.5);
+  const y = (p) => m.t + ((hi - p) / (hi - lo)) * ph;
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img',
+    'aria-label': `Predicted ${key} ranges and actual prices for the last ${n} predictions` });
+  const hover = svgEl('rect', { class: 'hc-hover', y: m.t, height: ph, width: bw, x: -bw });
+  svg.append(hover);
+  const step = niceStep(hi - lo, 3);
+  for (let p = Math.ceil(lo / step) * step; p <= hi; p += step) {
+    svg.append(svgEl('line', { class: 'hc-grid', x1: m.l, x2: W - m.r, y1: y(p), y2: y(p) }),
+      svgEl('text', { class: 'hc-tick', x: m.l - 6, y: y(p) + 4, 'text-anchor': 'end' }, money(p)));
+  }
+  const firstWaiting = items.findIndex((r) => !r.score);
+  if (firstWaiting > 0) {
+    const xs = m.l + bw * firstWaiting;
+    svg.append(svgEl('line', { class: 'hc-grid', x1: xs, x2: xs, y1: m.t, y2: H - m.b }));
+    if (W - m.r - xs >= 52) svg.append(svgEl('text', { class: 'hc-tick', x: xs + 4, y: m.t + 9 }, 'waiting'));
+  }
+  for (const i of [...new Set([0, Math.floor((n - 1) / 2), n - 1])]) {
+    const anchor = n === 1 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle';
+    const tx = anchor === 'start' ? m.l : anchor === 'end' ? W - m.r : x(i);
+    svg.append(svgEl('text', { class: 'hc-tick', x: tx, y: H - 6, 'text-anchor': anchor }, shortWhen(items[i].target)));
+  }
+  const w50 = Math.max(4, Math.min(10, bw * 0.55));
+  items.forEach((r, i) => {
+    const cx = x(i);
+    const g = svgEl('g', { class: r.score ? 'hc-item' : 'hc-item wait' },
+      svgEl('rect', { class: 'hc-r80', x: cx - 1, width: 2, y: y(r.hi80), height: Math.max(1, y(r.lo80) - y(r.hi80)), rx: 1 }),
+      svgEl('rect', { class: 'hc-r50', x: cx - w50 / 2, width: w50, y: y(r.hi50), height: Math.max(2, y(r.lo50) - y(r.hi50)), rx: Math.min(3, w50 / 2) }),
+      svgEl('line', { class: 'hc-mid', x1: cx - w50 / 2, x2: cx + w50 / 2, y1: y(r.mid), y2: y(r.mid) }));
+    if (r.score) {
+      g.append(svgEl('circle', { class: r.score.in80 ? 'hc-hit' : 'hc-miss', cx, cy: y(r.score.actual), r: 4 }));
+    }
+    svg.append(g);
   });
-  $('track').replaceChildren(el('thead', {}, head), el('tbody', {}, ...body));
-  $('track-note').textContent =
-    `Real predictions saved every hour by the background updater since ${new Date(track.since).toLocaleDateString()}, ` +
-    `checked against the price once their time came. Last update ${when(track.updatedAt)}.`;
+  // Hover or tap a column for that prediction's numbers.
+  const tip = el('div', { class: 'hc-tip', hidden: '' });
+  const show = (i) => {
+    const r = items[i];
+    hover.setAttribute('x', m.l + bw * i);
+    const lines = [
+      `${key} prediction made ${shortWhen(r.t)} at ${fmt2(r.price)}`,
+      `For ${shortWhen(r.target)}: middle ${money(r.mid)}`,
+      `50%: ${money(r.lo50)} – ${money(r.hi50)} · 80%: ${money(r.lo80)} – ${money(r.hi80)}`,
+      r.pUp === 0.5 ? 'No up/down call (50/50)' : `${r.pUp > 0.5 ? '▲' : '▼'} ${pct0(Math.max(r.pUp, 1 - r.pUp))} chance ${r.pUp > 0.5 ? 'up' : 'down'}`,
+      r.score
+        ? `Actual ${fmt2(r.score.actual)}: ${landedIn(r, r.score.actual) === 'outside' ? 'outside the 95% range' : `inside the ${landedIn(r, r.score.actual)} range`}` +
+          (r.pUp === 0.5 ? '' : ` · call ${r.score.hit ? 'right ✓' : 'wrong ✗'}`)
+        : `Waiting: checked after ${shortWhen(r.target)}`,
+    ];
+    tip.replaceChildren(...lines.map((t, k) => el('div', k === 0 ? { class: 'hc-tip-head' } : {}, t)));
+    tip.hidden = false;
+    const cx = x(i);
+    tip.style.left = `${cx}px`;
+    tip.classList.toggle('flip', cx > W / 2);
+  };
+  const hide = () => {
+    tip.hidden = true;
+    hover.setAttribute('x', -bw);
+  };
+  items.forEach((_, i) => {
+    const hit = svgEl('rect', { class: 'hc-hitbox', x: m.l + bw * i, y: m.t, width: bw, height: ph });
+    hit.addEventListener('pointerenter', () => show(i));
+    hit.addEventListener('click', () => show(i));
+    svg.append(hit);
+  });
+  svg.addEventListener('pointerleave', (e) => e.pointerType === 'mouse' && hide());
+  box.replaceChildren(svg, tip);
+}
+
+function setupHistory() {
+  const card = $('history-card');
+  const pick = (field, value) => {
+    state.historyView[field] = value;
+    save(HISTORY_VIEW_KEY, state.historyView);
+    renderHistory();
+  };
+  for (const b of card.querySelectorAll('[data-hsrc]')) b.addEventListener('click', () => pick('source', b.dataset.hsrc));
+  for (const b of card.querySelectorAll('[data-hkey]')) b.addEventListener('click', () => pick('key', b.dataset.hkey));
+  let resizeTimer = 0;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(renderHistory, 150);
+  });
 }
 
 // No exchange reachable from this device: show the background job's forecast.
@@ -1114,7 +1422,7 @@ function showBackgroundForecast() {
   const f = state.background?.forecast;
   if (!f || state.market) return;
   state.price = f.price;
-  state.forecast = { cards: f.cards };
+  state.forecast = { price: f.price, now: f.generatedAt, cards: f.cards };
   $('price').textContent = fmt2(f.price);
   $('fiat').textContent = `≈${usdCents.format(f.price)}`;
   renderCards();
@@ -1125,6 +1433,8 @@ function showBackgroundForecast() {
 
 setupControls();
 setupPlanner();
+setupHistory();
+renderHistory();
 refreshAll();
 refreshBackground();
 setInterval(everySecond, 1000);

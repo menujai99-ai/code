@@ -191,7 +191,10 @@ class HorizonMarkers {
   detached() {
     this.chart = this.series = this.requestUpdate = null;
   }
-  set(items, price, lastTime, colors) {
+  // origin: bars from the live candle's open to when the prediction was made
+  // (negative if before it); the dotted paths start there, at `price`.
+  set(items, price, lastTime, colors, origin = 0) {
+    this.origin = origin;
     this.items = items;
     this.price = price;
     this.lastTime = lastTime;
@@ -219,7 +222,7 @@ class HorizonMarkers {
     if (last == null || !this.items.length) return;
     const ts = this.chart.timeScale();
     const s = this.series;
-    const x0 = ts.logicalToCoordinate(last);
+    const x0 = xAt(ts, last + (this.origin || 0));
     const y0 = s.priceToCoordinate(this.price);
     const c = this.colors;
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -407,6 +410,7 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
   const midLine = chart.addSeries(LineSeries, { ...quiet, color: theme.ghostLine, lineWidth: 1, lineStyle: LineStyle.Dotted, priceFormat });
   const cone = new Cone();
   ghostSeries.attachPrimitive(cone);
+  let horizonOrigin = null; // when the prediction on screen was made (ms)
   let planLines = []; // [{ price, title, kind }] for the trade planner
   let planHandles = [];
   const markers = new HorizonMarkers();
@@ -685,15 +689,18 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
 
     // Likely direction at future times: [{ key, t (ms), mid, lo50, hi50, pUp, edge }].
     // Near ones are drawn on the chart; far ones become chips at the right edge.
-    setHorizons(list, price) {
+    // price / madeAt: the price and time (ms) the prediction was made at.
+    setHorizons(list, price, madeAt) {
       horizons = list;
+      horizonOrigin = madeAt;
       const last = bars[bars.length - 1];
       if (!last) return;
       const offs = horizonOffsets(step, last.t, list.map((h) => h.t));
       const near = [];
       const far = [];
       list.forEach((h, i) => (offs[i].far ? far : near).push({ ...h, bars: offs[i].bars }));
-      markers.set(near, price, sec(last.t), { up: theme.up, down: theme.down, flat: theme.ghostLine, bg: theme.bg });
+      const origin = Number.isFinite(madeAt) ? (madeAt - last.t) / step : 0;
+      markers.set(near, price, sec(last.t), { up: theme.up, down: theme.down, flat: theme.ghostLine, bg: theme.bg }, origin);
       farChips.replaceChildren(...far.map((h) => {
         const dir = h.pUp > 0.5 ? 1 : h.pUp < 0.5 ? -1 : 0;
         const chip = el('span', `k-chip ${h.edge ? (dir > 0 ? 'k-up' : dir < 0 ? 'k-down' : '') : ''}`);
@@ -752,7 +759,7 @@ export function createBinanceChart(container, { onNeedHistory } = {}) {
       });
       midLine.applyOptions({ color: theme.ghostLine });
       cone.set(cone.points, { line: theme.cone, fill: theme.coneFill });
-      if (bars.length) api.setHorizons(horizons, markers.price);
+      if (bars.length) api.setHorizons(horizons, markers.price, horizonOrigin);
       const lines = planLines;
       planLines = [];
       planHandles.forEach((h) => candles.removePriceLine(h));

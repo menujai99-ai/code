@@ -91,6 +91,7 @@
         <span class="k-sep" aria-hidden="true"></span>
         <button id="ranges" type="button" aria-pressed="false">Ranges</button>
       </div>
+      <p id="snap-line" class="snap-line" hidden></p>
       <div class="legend">
         <span><i class="key-arrow"></i>Likely direction at +1h · +4h · +24h (line = 50% range)</span>
         <span id="legend-ranges" hidden><i class="key-ghost"></i>Forecast candle (box 50%, line 80%) <i class="key-cone"></i>95% range</span>
@@ -113,7 +114,7 @@
 
     <section id="plan-card" class="card plan" aria-label="Plan a trade" hidden>
       <h2>Plan a trade</h2>
-      <p class="note">For short-term trades: pick a side and a time window. The stop and target come from the forecast ranges; edit them to see how the odds change.</p>
+      <p class="note">For short-term trades, from the live price: pick a side and a time window. The stop and target come from the forecast ranges; edit them to see how the odds change.</p>
       <div class="plan-controls">
         <div class="seg" role="group" aria-label="Side">
           <button type="button" data-side="long">Long</button>
@@ -171,10 +172,34 @@
       <p class="note">A well-calibrated model lands inside its 50%, 80% and 95% ranges about 50%, 80% and 95% of the time. <b>Direction right</b> above 50% means the up/down lean has had some edge; when it hasn't, the app leaves the lean at 50%.</p>
     </section>
 
-    <section id="track-card" class="card" hidden>
-      <h2>Live track record</h2>
-      <p id="track-note" class="note"></p>
-      <table id="track" class="grid-table"></table>
+    <section id="history-card" class="card history" aria-label="Prediction history">
+      <h2>Prediction history</h2>
+      <div class="plan-controls">
+        <div class="seg" role="group" aria-label="Whose predictions">
+          <button type="button" data-hsrc="device">This device</button>
+          <button type="button" data-hsrc="background">Background (shared)</button>
+        </div>
+        <div class="seg" role="group" aria-label="Horizon">
+          <button type="button" data-hkey="1h">1h</button>
+          <button type="button" data-hkey="4h">4h</button>
+          <button type="button" data-hkey="24h">24h</button>
+          <button type="button" data-hkey="7d">7d</button>
+        </div>
+      </div>
+      <p id="history-note" class="note"></p>
+      <div id="history-body">
+        <div id="history-tiles" class="tiles"></div>
+        <div id="history-chart" class="hchart"></div>
+        <div class="legend hlegend" aria-hidden="true">
+          <span><i class="key-r50"></i>50% range</span>
+          <span><i class="key-r80"></i>80% range</span>
+          <span><i class="key-hit"></i>Actual, inside 80%</span>
+          <span><i class="key-miss"></i>Actual, outside 80%</span>
+          <span><i class="key-wait"></i>Waiting</span>
+        </div>
+        <p id="history-pending" class="note"></p>
+        <div class="table-scroll"><table id="history-table" class="grid-table history-table"></table></div>
+      </div>
     </section>
 
     <details class="card how">
@@ -185,10 +210,11 @@
         <li><b>Shape of the range.</b> Bitcoin has more big surprises than a bell curve. The range uses the real shape of past moves, scaled to today's volatility.</li>
         <li><b>Which way it leans.</b> A small logistic-regression model trained on the indicators (EMAs, RSI, MACD, Bollinger %B, volume, on-balance volume, recent returns) estimates the chance of finishing higher. It can only nudge the middle of the range a little, and it is pulled back to 50% when the backtest shows no edge.</li>
         <li><b>Checked.</b> Every horizon is replayed on recent history to show how often the ranges actually held.</li>
-        <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles, Market Trades and ranges move in real time. When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
+        <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles and Market Trades move in real time. The predictions stay fixed for 15 minutes at a time (see below). When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
         <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. Arrows at +1h, +4h and +24h show the likely direction and the middle 50% range, coloured only where the model has shown an edge. Tap <b>Ranges</b> for grey forecast candles (box 50%, line 80%) inside the dashed 95% range.</li>
         <li><b>Plan a trade.</b> For a stop and a target, thousands of possible price paths are simulated in 5-minute steps (each hour's move drawn from Bitcoin's own past hourly moves, scaled by the volatility forecast) to count how often the target comes first, the stop comes first, or neither within the window. Fees are included in the result and the position size. The same planner is replayed on past hours to show how its odds held up.</li>
-        <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Live track record</b>.</li>
+        <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Background (shared)</b> record in <b>Prediction history</b>.</li>
+        <li><b>Fixed predictions.</b> A new prediction is made every 15 minutes (:00, :15, :30, :45) from the price at that moment, and then held: the cards, arrows and ranges don't move with every trade. This device saves each one and checks it against 15-minute candles once its time comes; that is the <b>This device</b> record in <b>Prediction history</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
     </details>
