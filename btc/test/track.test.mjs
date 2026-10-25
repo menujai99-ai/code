@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildModel, forecastFrom } from '../forecast.js';
 import {
-  predictionEntry, cardsOf, priceAt, scoreHistory, tally, predictionRows, trimLog, parseLines,
+  predictionEntry, cardsOf, priceAt, scoreHistory, tally, predictionRows, trimLog, parseLines, replayLog,
 } from '../track.js';
 import { garchPath } from './synthetic.mjs';
 
@@ -96,6 +96,26 @@ test('trimLog keeps the newest predictions within the age and count limits, with
 test('parseLines skips damaged lines', () => {
   assert.deepEqual(parseLines('{"a":1}\nnot json\n\n{"a":2}\n'), [{ a: 1 }, { a: 2 }]);
   assert.deepEqual(parseLines(''), []);
+});
+
+test('replayLog: the backtests as a history whose totals match them', () => {
+  const { history, scores } = replayLog(model.tests);
+  assert.ok(history.every((run) => run.source === 'replay'));
+  assert.ok(history.every((run, i) => i === 0 || run.t > history[i - 1].t), 'one entry per time, in order');
+  for (const key of ['1h', '4h', '24h', '7d']) {
+    const test = model.tests[key];
+    const rows = predictionRows(history, scores, key);
+    assert.equal(rows.length, test.count, key);
+    assert.ok(rows.every((r) => r.score), `${key}: all checked`);
+    const t = tally(rows.map((r) => r.score));
+    assert.equal(t.in50 / t.count, test.in50, `${key} 50%`);
+    assert.equal(t.in80 / t.count, test.in80, `${key} 80%`);
+    assert.equal(t.in95 / t.count, test.in95, `${key} 95%`);
+    assert.equal(t.hits, test.hits, `${key} hits`);
+    assert.equal(t.ups / t.count, test.ups, `${key} ups`);
+  }
+  // 1h and 24h replays start at some of the same hours: those share one entry.
+  assert.ok(history.some((run) => run.h['1h'] && run.h['24h']));
 });
 
 function close(a, b) {

@@ -414,12 +414,15 @@ export function interpolateP(points, h) {
 // predict h steps ahead using only data up to the start point, then compare
 // with what happened. Models are refit every `refitEvery` start points.
 
-export function backtest(candles, { emaPeriods, h, origins = 240, spacing = 1, refitEvery = 60 }) {
+// Each prediction is also kept in `rows` (times in ms; step = candle length):
+//   { t: made at the close of candle p, price, target: close of candle p + h,
+//     mid, lo50 … hi95, pUp (the model's own lean, before shrinkBySkill), actual }
+export function backtest(candles, { emaPeriods, h, origins = 240, spacing = 1, refitEvery = 60, step = 3600e3 }) {
   const n = candles.length;
   const minStart = Math.max(...emaPeriods, 35) + 150 + h;
   const starts = [];
   for (let p = n - 1 - h; p >= minStart && starts.length < origins; p -= spacing) starts.unshift(p);
-  const res = { h, count: 0, in50: 0, in80: 0, in95: 0, called: 0, hits: 0, ups: 0, width80: 0 };
+  const res = { h, count: 0, in50: 0, in80: 0, in95: 0, called: 0, hits: 0, ups: 0, width80: 0, rows: [] };
   let fit = null;
   starts.forEach((p, i) => {
     if (i % refitEvery === 0) {
@@ -438,6 +441,10 @@ export function backtest(candles, { emaPeriods, h, origins = 240, spacing = 1, r
       if ((f.pUp > 0.5) === (actual > now)) res.hits++;
     }
     res.width80 += (f.hi80 - f.lo80) / now;
+    res.rows.push({
+      t: candles[p].t + step, price: now, target: candles[p + h].t + step, actual,
+      mid: f.mid, lo50: f.lo50, hi50: f.hi50, lo80: f.lo80, hi80: f.hi80, lo95: f.lo95, hi95: f.hi95, pUp: f.pUp,
+    });
   });
   if (res.count) {
     for (const k of ['in50', 'in80', 'in95', 'ups', 'width80']) res[k] /= res.count;

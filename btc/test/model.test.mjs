@@ -164,6 +164,24 @@ test('indicator snapshot covers the EMAs and core indicators', () => {
   for (const r of snap.rows) assert.ok([1, 0, -1].includes(r.vote));
 });
 
+test('backtest keeps each replayed prediction, matching its totals', () => {
+  const c = garchPath({ n: 1200, seed: 9 });
+  const r = backtest(c, { emaPeriods: [20, 50, 100, 200], h: 4, origins: 30, spacing: 4, refitEvery: 10 });
+  assert.equal(r.rows.length, r.count);
+  const share = (f) => r.rows.filter(f).length / r.count;
+  assert.equal(share((x) => x.actual >= x.lo50 && x.actual <= x.hi50), r.in50);
+  assert.equal(share((x) => x.actual >= x.lo80 && x.actual <= x.hi80), r.in80);
+  assert.equal(share((x) => x.actual > x.price), r.ups);
+  assert.equal(r.rows.filter((x) => x.pUp !== 0.5 && (x.pUp > 0.5) === (x.actual > x.price)).length, r.hits);
+  for (const x of r.rows) {
+    const p = c.findIndex((k) => k.t + 3600e3 === x.t); // made at the close of candle p ...
+    assert.ok(p >= 0 && x.price === c[p].c, 'made at a candle close, at its price');
+    assert.equal(x.target, c[p + 4].t + 3600e3, '... for the close 4 candles later');
+    assert.equal(x.actual, c[p + 4].c);
+  }
+  r.rows.slice(1).forEach((x, i) => assert.ok(x.t >= r.rows[i].target, '4h windows every 4 hours never overlap'));
+});
+
 test('full forecast: cards and paths widen with time and stay ordered', () => {
   const hourly = garchPath({ n: 2000, seed: 1 });
   const daily = garchPath({ n: 1000, stepMs: 86400e3, omega: 2e-5, alpha: 0.1, beta: 0.85, seed: 2 });
@@ -179,5 +197,6 @@ test('full forecast: cards and paths widen with time and stay ordered', () => {
     for (const b of path) assert.ok(b.lo95 < b.lo80 && b.lo80 < b.lo50 && b.lo50 < b.mid && b.mid < b.hi50 && b.hi50 < b.hi80 && b.hi80 < b.hi95);
   }
   assert.equal(f.cards['24h'], f.hourPath.at(-1));
-  for (const k of ['1h', '4h', '24h', '7d']) assert.ok(m.tests[k].count > 100, k);
+  // Replays: 1h hourly (240), 4h every 4 hours over 30 days, 24h every 3 hours, 7d daily within 30 days.
+  assert.deepEqual(['1h', '4h', '24h', '7d'].map((k) => m.tests[k].count), [240, 179, 233, 23]);
 });

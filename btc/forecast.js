@@ -10,7 +10,9 @@ export const DAILY_EMAS = [7, 50, 100, 200]; // days
 export const HOUR_PATH = [4, 8, 12, 16, 20, 24]; // hours ahead, saved by the background job
 export const DAY_PATH = [1, 2, 3, 4, 5, 6, 7]; // days ahead
 export const MAX_HOURS = 168; // forecasts reach 7 days
+export const REPLAY_DAYS = 30; // backtests look back at most this far
 const HOUR_MS = 3600e3;
+const DAY_MS = 24 * HOUR_MS;
 const EVERY_HOUR = Array.from({ length: 24 }, (_, i) => i + 1);
 
 export const HORIZONS = [
@@ -33,10 +35,12 @@ export function buildModel(hourly, daily) {
     logitHorizons: [7],
   });
   const tests = {
+    // 1h and 4h are replayed at intervals of their own length, so no two
+    // checks share a window; nothing reaches back more than REPLAY_DAYS.
     '1h': backtest(hourly, { emaPeriods: HOURLY_EMAS, h: 1 }),
-    '4h': backtest(hourly, { emaPeriods: HOURLY_EMAS, h: 4 }),
-    '24h': backtest(hourly, { emaPeriods: HOURLY_EMAS, h: 24, spacing: 3 }),
-    '7d': backtest(daily, { emaPeriods: DAILY_EMAS, h: 7 }),
+    '4h': backtest(hourly, { emaPeriods: HOURLY_EMAS, h: 4, spacing: 4, origins: Math.floor((REPLAY_DAYS * 24 - 4) / 4) }),
+    '24h': backtest(hourly, { emaPeriods: HOURLY_EMAS, h: 24, spacing: 3, origins: Math.floor((REPLAY_DAYS * 24 - 24) / 3) + 1 }),
+    '7d': backtest(daily, { emaPeriods: DAILY_EMAS, h: 7, origins: REPLAY_DAYS - 7, step: DAY_MS }),
   };
   const hLast = hourly.length - 1;
   const dLast = daily.length - 1;

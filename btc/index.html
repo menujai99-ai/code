@@ -177,7 +177,8 @@
       <div class="plan-controls">
         <div class="seg" role="group" aria-label="Whose predictions">
           <button type="button" data-hsrc="device">This device</button>
-          <button type="button" data-hsrc="background">Background (shared)</button>
+          <button type="button" data-hsrc="background">Shared</button>
+          <button type="button" data-hsrc="replay">Replayed</button>
         </div>
         <div class="seg" role="group" aria-label="Horizon">
           <button type="button" data-hkey="1h">1h</button>
@@ -213,8 +214,9 @@
         <li><b>Live.</b> While the page is open it streams every trade from Binance (or Coinbase / Kraken), so the price, candles and Market Trades move in real time. The predictions stay fixed for 15 minutes at a time (see below). When an hourly or daily candle closes, the model is refit on the new data by itself.</li>
         <li><b>Chart.</b> Candlesticks from 1 minute to 1 week, with the indicators and 24h figures traders use on exchanges like Binance: pinch or scroll to zoom, drag to go back in time, tap a candle for its details, or tap ⤢ for full screen. Arrows at +1h, +4h and +24h show the likely direction and the middle 50% range, coloured only where the model has shown an edge. Tap <b>Ranges</b> for grey forecast candles (box 50%, line 80%) inside the dashed 95% range.</li>
         <li><b>Plan a trade.</b> For a stop and a target, thousands of possible price paths are simulated in 5-minute steps (each hour's move drawn from Bitcoin's own past hourly moves, scaled by the volatility forecast) to count how often the target comes first, the stop comes first, or neither within the window. Fees are included in the result and the position size. The same planner is replayed on past hours to show how its odds held up.</li>
-        <li><b>Background updater.</b> A scheduled job on GitHub runs the same model every hour even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Background (shared)</b> record in <b>Prediction history</b>.</li>
+        <li><b>Background updater.</b> A scheduled job on GitHub runs the same model several times a day, even when nobody has the app open, and saves each forecast. Once a forecast's time has passed it is checked against the real price; that is the <b>Shared</b> record in <b>Prediction history</b>.</li>
         <li><b>Fixed predictions.</b> A new prediction is made every 15 minutes (:00, :15, :30, :45) from the price at that moment, and then held: the cards, arrows and ranges don't move with every trade. This device saves each one and checks it against 15-minute candles once its time comes; that is the <b>This device</b> record in <b>Prediction history</b>.</li>
+        <li><b>Replayed.</b> To see how the model would have done before you started using it, <b>Prediction history → Replayed</b> re-runs it at past times using only the data it had then: every hour for the last 10 days (1h), every 4 hours for 30 days (4h, so no two checks overlap), every 3 hours for 30 days (24h) and every day for 30 days (7d). The same replays give <b>How well has it worked?</b>.</li>
       </ol>
       <p>Funding, sentiment and on-chain figures are shown for context; they don't have enough free history to train on, so they don't move the ranges.</p>
     </details>

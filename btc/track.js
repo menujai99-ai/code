@@ -67,6 +67,30 @@ export function scoreHistory(history, scored, candles, now, step = HOUR) {
   return fresh;
 }
 
+// The backtests' replayed predictions (model.tests[key].rows) as a log, in
+// the same shape as the saved ones: what the model would have said at each
+// past start point, using only the data it had then, and how it turned out.
+export function replayLog(tests) {
+  const runs = new Map();
+  const scores = [];
+  for (const hz of HORIZONS) {
+    for (const r of tests?.[hz.key]?.rows || []) {
+      const run = runs.get(r.t) ?? { t: r.t, price: r.price, source: 'replay', h: {} };
+      runs.set(r.t, run);
+      run.h[hz.key] = Object.fromEntries(KEEP.map((k) => (k === 't' ? ['target', r.target] : [k, r[k]])));
+      scores.push({
+        t: r.t, h: hz.key, target: r.target, price: r.price, actual: r.actual,
+        in50: r.actual >= r.lo50 && r.actual <= r.hi50,
+        in80: r.actual >= r.lo80 && r.actual <= r.hi80,
+        in95: r.actual >= r.lo95 && r.actual <= r.hi95,
+        called: r.pUp !== 0.5,
+        hit: r.pUp !== 0.5 && (r.pUp > 0.5) === (r.actual > r.price),
+      });
+    }
+  }
+  return { history: [...runs.values()].sort((a, b) => a.t - b.t), scores };
+}
+
 // Totals for a list of scores (one horizon).
 export function tally(rows) {
   return {

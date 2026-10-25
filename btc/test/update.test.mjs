@@ -40,6 +40,7 @@ test('updater writes a forecast, logs it, and scores predictions once they matur
   assert.deepEqual(Object.keys(forecast.cards), ['1h', '4h', '24h', '7d']);
   assert.ok(forecast.cards['24h'].lo95 < forecast.price && forecast.price < forecast.cards['24h'].hi95);
   assert.equal(first.fresh.length, 0, 'nothing has matured yet');
+  assert.ok(Object.values(forecast.backtest).every((b) => b.count > 0 && !('rows' in b)), 'backtest totals only, no replay rows');
 
   const t2 = end - 2 * H + 7 * 60e3; // 28 hours later: 1h, 4h and 24h from run 1 have matured
   const second = await run({ out, fixture: dir, now: t2 });

@@ -152,3 +152,21 @@ test('plannerReplay: the predicted odds match what happened on the GARCH path', 
 function close(a, b, tol) {
   assert.ok(Math.abs(a - b) <= tol, `${a} vs ${b}`);
 }
+
+// ---------- Replays ----------
+
+test('replays reach back at most 30 days; 4h windows don\'t overlap', () => {
+  const lastClose = hourly[hourly.length - 1].t + H;
+  const dayClose = daily[daily.length - 1].t + D;
+  const r4 = model.tests['4h'].rows;
+  assert.ok(r4.length > 150);
+  r4.slice(1).forEach((x, i) => {
+    assert.equal(x.t - r4[i].t, 4 * H, 'every 4 hours');
+    assert.ok(x.t >= r4[i].target, 'no shared window');
+  });
+  assert.ok(lastClose - r4[0].t <= 30 * D, '4h: within 30 days');
+  const r7 = model.tests['7d'].rows;
+  assert.equal(r7.length, 23);
+  assert.ok(dayClose - r7[0].t <= 30 * D && r7.at(-1).target <= dayClose, '7d: made within 30 days, all checked');
+  assert.ok(lastClose - model.tests['24h'].rows[0].t <= 30 * D, '24h: within 30 days');
+});

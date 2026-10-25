@@ -68,7 +68,7 @@ export async function run({ out = 'out', fixture = null, now = null } = {}) {
     dayPath: f.dayPath,
     pUp: model.pUp,
     rawPUp: model.raw,
-    backtest: model.tests,
+    backtest: Object.fromEntries(Object.entries(model.tests).map(([k, { rows, ...totals }]) => [k, totals])), // totals only
     indicators: snap.rows,
     extras,
   };

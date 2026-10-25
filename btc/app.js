@@ -11,7 +11,7 @@ import {
 } from './forecast.js';
 import { LiveFeed, applyTick, upsertCandle } from './live.js';
 import { createBinanceChart, MAIN_KINDS, SUB_KINDS } from './chart.js';
-import { predictionEntry, cardsOf, scoreHistory, predictionRows, tally, trimLog } from './track.js';
+import { predictionEntry, cardsOf, scoreHistory, predictionRows, tally, trimLog, replayLog } from './track.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -96,7 +96,7 @@ function listFrom(x) {
 
 function viewFrom(saved) {
   return {
-    source: saved.source === 'background' ? 'background' : 'device',
+    source: ['background', 'replay'].includes(saved.source) ? saved.source : 'device',
     key: HORIZONS.some((hz) => hz.key === saved.key) ? saved.key : '1h',
   };
 }
@@ -264,7 +264,7 @@ async function refreshExtras() {
 
 async function refreshBackground() {
   state.background = await loadBackground().catch(() => null);
-  renderHistory();
+  if (state.historyView.source === 'background') renderHistory(); // otherwise nothing it shows has changed
   if (state.model && state.forecast && state.market) renderSignal();
   if (!state.market) showBackgroundForecast();
 }
@@ -416,7 +416,10 @@ function render(full = false) {
   renderPlanner();
   renderCards();
   renderIndicators();
-  if (full) renderBacktest();
+  if (full) {
+    renderBacktest();
+    if (state.historyView.source === 'replay') renderHistory(); // new replays after a refit
+  }
   renderLive();
   renderSnapLine();
 }
@@ -1246,8 +1249,13 @@ function callText(r) {
   return r.score ? `${sym} ${r.score.hit ? '✓' : '✗'}` : sym;
 }
 
+let replayed = { model: null, log: { history: [], scores: [] } };
 function historySource() {
   if (state.historyView.source === 'device') return state.device;
+  if (state.historyView.source === 'replay') {
+    if (state.model && replayed.model !== state.model) replayed = { model: state.model, log: replayLog(state.model.tests) };
+    return replayed.log;
+  }
   return { history: state.background?.history || [], scores: state.background?.scores || [] };
 }
 
@@ -1263,16 +1271,21 @@ function renderHistory() {
   for (const b of card.querySelectorAll('[data-hsrc]')) b.setAttribute('aria-pressed', String(b.dataset.hsrc === v.source));
   for (const b of card.querySelectorAll('[data-hkey]')) b.setAttribute('aria-pressed', String(b.dataset.hkey === v.key));
   const device = v.source === 'device';
+  const replay = v.source === 'replay';
   const { history, scores } = historySource();
   const rows = predictionRows(history, scores, v.key);
   const checked = rows.filter((r) => r.score);
   const waiting = rows.filter((r) => !r.score);
   const track = state.background?.track;
-  let note = device
+  let note = replay
+    ? `The model re-run ${{ '1h': 'every hour', '4h': 'every 4 hours', '24h': 'every 3 hours', '7d': 'every day' }[v.key]} over the last ${v.key === '1h' ? 10 : 30} days, using only the data it had then, and checked against what happened next: the same replays as “How well has it worked?”. The up/down chance is the model’s own lean; the live app pulls it toward 50% where it hasn’t beaten guessing.`
+    : device
     ? 'Saved on this device every 15 minutes while the app is open (the fixed prediction shown above the chart), then checked against the price when its time comes.'
     : `Saved by the background job on GitHub, which runs a few times a day even when nobody has the app open; the same for everyone.${track ? ` Last run ${when(track.updatedAt)}.` : ''}`;
   if (!rows.length) {
-    note += device
+    note += replay
+      ? ' Calculating…'
+      : device
       ? ' Nothing saved yet: the first prediction is saved once the forecast has loaded, and checked after an hour.'
       : state.background?.history ? ' Nothing saved yet.' : ' Its log couldn’t be loaded right now.';
   }
