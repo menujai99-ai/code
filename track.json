@@ -1,40 +1,40 @@
 {
- "updatedAt": 1792961703023,
+ "updatedAt": 1792970326244,
  "since": 1791724121236,
  "horizons": {
   "1h": {
-   "count": 83,
+   "count": 84,
    "in50": 46,
-   "in80": 68,
-   "in95": 78,
+   "in80": 69,
+   "in95": 79,
    "called": 9,
    "hits": 2,
    "ups": 44
   },
   "4h": {
-   "count": 82,
+   "count": 83,
    "in50": 40,
    "in80": 62,
-   "in95": 79,
-   "called": 24,
+   "in95": 80,
+   "called": 25,
    "hits": 18,
    "ups": 43
   },
   "24h": {
-   "count": 77,
-   "in50": 47,
-   "in80": 64,
-   "in95": 74,
-   "called": 77,
+   "count": 78,
+   "in50": 48,
+   "in80": 65,
+   "in95": 75,
+   "called": 78,
    "hits": 38,
    "ups": 38
   },
   "7d": {
-   "count": 43,
-   "in50": 39,
-   "in80": 43,
-   "in95": 43,
-   "called": 43,
+   "count": 44,
+   "in50": 40,
+   "in80": 44,
+   "in95": 44,
+   "called": 44,
    "hits": 8,
    "ups": 8
   }
