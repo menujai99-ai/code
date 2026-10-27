@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve from cache, refresh in the background.
-const CACHE = 'stash-v4';
-const ASSETS = ['./', 'index.html', 'styles.css', 'stash.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
+const CACHE = 'stash-v5';
+const ASSETS = ['./', 'index.html', 'styles.css', 'stash.css', 'app.js', 'manifest.webmanifest', 'icon.svg', 'fonts/bricolage-latin.woff2', 'fonts/bricolage-latin-ext.woff2', 'fonts/jakarta-latin.woff2', 'fonts/jakarta-latin-ext.woff2'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
