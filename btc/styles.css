@@ -98,6 +98,7 @@ a { color: var(--accent-text); }
   color: var(--text);
   cursor: pointer;
 }
+.brand { width: 44px; height: 44px; flex: none; border-radius: 12px; display: block; }
 .icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .icon-btn:active, .btn:active { transform: scale(0.96); }
 .icon-btn.spin svg { animation: spin 0.9s linear infinite; }
