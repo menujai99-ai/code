@@ -110,6 +110,19 @@ A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that 
 
 **Not financial advice.** The ranges are estimates of what is likely, not promises; the price can and does move outside them.
 
+## Stash — save money, earn rewards
+
+Another app in [`save/`](save/), with its own banknote-and-gold look, for **building a saving habit**:
+
+- **A jar for every goal.** Give a goal a target (and optionally a date). Its glass jar fills with liquid in the goal's colour, with dashed marks at 25 / 50 / 75%. Each time you save, a gold coin drops in and the level rises. Goal cards show a mini jar.
+- **Bigger intentions, bigger rewards.** Every goal has a tier set by its size: 🌱 Small step ×1, 🌿 Solid ×1.5, 🌳 Big ×2, 🏔️ Huge ×3. The multiplier applies to XP on every save. Bigger goals also pay bigger 25/50/75/100% milestone bonuses and a bigger **treat budget** (2–5% of the goal) for the reward you choose. Set what counts as "big" for you in Settings.
+- **XP, levels and badges.** Level up from Seedling Saver to Legend of Thrift. Badges for streaks, skipping purchases, halfway, finishing a Big or Huge goal and more. New ones show up with confetti.
+- **I skipped a buy.** Didn't buy the coffee? Log it, and the money goes to a goal.
+- **Want list (cool-off).** Add something you're tempted by and wait 24h to 30 days. If you skip it after the wait, it earns ×1.5 XP. If you still want it, buy it guilt-free.
+- **Streaks** for each day you put money away.
+- **Spending hurts — on purpose.** You can spend money from a jar, but first you see **the bill**: XP lost (spending takes back 2× what that money earned), level drop, milestones and badges you'd lose, your streak reset, days of saving undone, and hours of work it cost (set your hourly pay in Settings). You have to say what it's for, and **hold the button for 3 seconds** — let go and nothing happens. Afterwards the jar is **cracked and leaking**: for 3 days everything you save earns half XP, and the home screen counts the leak down. There's always a "put it on the want list instead" way out.
+- Everything stays on your device. Use **Export / Import backup** in Settings to move it. Lives at `https://menujai99-ai.github.io/code/save/`.
+
 ## Files
 
 | File | Purpose |
@@ -136,3 +149,4 @@ A third app in [`btc/`](btc/) (`https://menujai99-ai.github.io/code/btc/`) that 
 | `btc/live.js`, `btc/worker.js` | Live WebSocket feed with fallbacks; model refits off the main thread |
 | `btc/scripts/update.mjs`, `.github/workflows/btc-forecast.yml` | Hourly background forecast and live track record (saved on the `btc-data` branch) |
 | `btc/test/` | Model tests on simulated prices (`node --test btc/test/*.test.mjs`) |
+| `save/` | The Stash savings app (its own HTML, CSS, JS, service worker and manifest) |
