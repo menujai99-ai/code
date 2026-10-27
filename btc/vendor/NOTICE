@@ -1,0 +1,6 @@
+TradingView Lightweight Charts™
+Copyright (c) 2025 TradingView, Inc. https://www.tradingview.com/
+
+The file lightweight-charts.mjs in this folder is the unmodified standalone
+ES-module build of lightweight-charts v5.1.0 from npm, licensed under the
+Apache License 2.0 (see LICENSE in this folder).

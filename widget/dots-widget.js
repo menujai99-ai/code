@@ -15,6 +15,14 @@
 //   a|b|c|d    → the old pasted format, ignoring countdowns.json
 
 const DEFAULT = 'Exam prep|2026-09-07|100|#e8590c';
+// The same file straight from the repo: new commits show up here at once,
+// without waiting for GitHub Pages to rebuild. Public repo, so no token needed.
+const REPO_API = 'https://api.github.com/repos/menujai99-ai/code/contents/widget/countdowns.json';
+// How often to ask iOS for a refresh (iOS decides the real timing).
+const REFRESH_MINUTES = 15;
+
+// Shown on the widget: when the countdowns were last fetched, or that it's offline.
+let freshness = '';
 const FALLBACK_COLOR = '#e8590c';
 
 const DAY_MS = 86400000;
@@ -50,6 +58,58 @@ function parseEntry(e) {
   }
   if (!(n > 0)) return null;
   return { name: String(e.name || 'Countdown'), start: s, total: n, color: validColor(e.color) };
+}
+
+/**
+ * Parse countdowns.json, forgiving common hand-editing slips: a missing
+ * comma between entries, trailing commas, and curly quotes.
+ * Returns { list } or { error }.
+ */
+function parseCountdowns(text) {
+  const asList = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : null);
+  try {
+    const list = asList(JSON.parse(text));
+    if (list) return { list };
+  } catch (e) {
+    /* try the repaired version below */
+  }
+  const fixed = String(text)
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\}(\s*)\{/g, '},$1{')
+    .replace(/,(\s*[\]}])/g, '$1');
+  try {
+    const list = asList(JSON.parse(fixed));
+    if (list) return { list };
+    return { error: 'countdowns.json should be a list: [ {...}, {...} ]' };
+  } catch (e) {
+    return { error: `countdowns.json has a typo (${e.message}). Check its commas, quotes and brackets.` };
+  }
+}
+
+async function fetchText(url, headers) {
+  try {
+    const req = new Request(url);
+    // Widgets get only a few seconds to run in the background; fail fast.
+    req.timeoutInterval = 6;
+    if (headers) req.headers = headers;
+    const text = await req.loadString();
+    return req.response && req.response.statusCode === 200 ? text : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Fresh countdowns.json from the GitHub API (up to date the moment the app
+ * commits), or null. Just one quick request: the loader has already fetched
+ * the GitHub Pages copy, which is used if this fails.
+ */
+async function downloadCountdowns() {
+  return fetchText(`${REPO_API}?t=${Date.now()}`, {
+    Accept: 'application/vnd.github.raw',
+    'User-Agent': 'Dots-widget',
+  });
 }
 
 /** Returns { task } or { error }. */
@@ -203,20 +263,24 @@ function buildWidget(task, family) {
   w.backgroundColor = BG;
   w.setPadding(14, 14, 14, 14);
   // Refresh at midnight (dot flips) and every ~30 min for today's fill.
-  w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 5000, now.getTime() + 30 * 60000));
+  w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 5000, now.getTime() + REFRESH_MINUTES * 60000));
   w.url = 'scriptable:///run/' + encodeURIComponent(Script.name());
 
+  // Heights are tight (about 130pt of content in small/medium); anything that
+  // doesn't fit is cut off by iOS, so keep these stacks within budget.
   if (family === 'small') {
+    w.setPadding(12, 12, 12, 12);
     const top = w.addStack();
     top.centerAlignContent();
-    addText(top, num, Font.heavySystemFont(26), accent);
+    addText(top, num, Font.heavySystemFont(24), accent);
     top.addSpacer(4);
     addText(top, label, Font.semiboldSystemFont(11), MUTED);
-    w.addSpacer(6);
-    w.addImage(drawDots(task, st, 130, 68, dark)).centerAlignImage();
+    w.addSpacer(4);
+    w.addImage(drawDots(task, st, 130, 52, dark)).centerAlignImage();
     w.addSpacer(4);
     addText(w, task.name, Font.semiboldSystemFont(11), TEXT);
     addDeadline(w, task, st, 10, accent, { label: 'Ends in' });
+    if (freshness) addText(w, freshness, Font.systemFont(9), MUTED);
     return w;
   }
 
@@ -226,17 +290,25 @@ function buildWidget(task, family) {
     row.centerAlignContent();
     const col = row.addStack();
     col.layoutVertically();
-    col.size = new Size(110, 0);
-    addText(col, task.name, Font.semiboldSystemFont(13), TEXT, 2);
-    col.addSpacer(4);
-    addText(col, num, Font.heavySystemFont(38), accent);
-    addText(col, label, Font.semiboldSystemFont(12), MUTED);
-    col.addSpacer(4);
+    col.size = new Size(116, 0);
+    addText(col, task.name, Font.semiboldSystemFont(13), TEXT);
+    col.addSpacer(2);
+    const big = col.addStack();
+    big.layoutHorizontally();
+    big.bottomAlignContent();
+    addText(big, num, Font.heavySystemFont(30), accent);
+    big.addSpacer(4);
+    addText(big, label, Font.semiboldSystemFont(11), MUTED);
+    col.addSpacer(2);
     addText(col, subline(task, st), Font.systemFont(11), MUTED);
     col.addSpacer(2);
     addDeadline(col, task, st, 11, accent, { stacked: true });
+    if (freshness) {
+      col.addSpacer(2);
+      addText(col, freshness, Font.systemFont(9), MUTED);
+    }
     row.addSpacer(10);
-    row.addImage(drawDots(task, st, 180, 128, dark));
+    row.addImage(drawDots(task, st, 176, 124, dark));
     return w;
   }
 
@@ -249,6 +321,7 @@ function buildWidget(task, family) {
   addText(left, task.name, Font.semiboldSystemFont(15), TEXT);
   addText(left, subline(task, st), Font.systemFont(12), MUTED);
   addDeadline(left, task, st, 12, accent);
+  if (freshness) addText(left, freshness, Font.systemFont(10), MUTED);
   head.addSpacer();
   const right = head.addStack();
   right.layoutVertically();
@@ -300,7 +373,23 @@ function errorWidget(msg) {
 
 /** Build and show the widget. Called by loader.js, or below when pasted directly. */
 async function main({ countdowns, param } = {}) {
-  const { task, error } = pickTask(countdowns, param);
+  // The loader drops countdowns.json if it isn't strict JSON, so re-read it here
+  // leniently. This file updates itself, so even old loaders get the fix.
+  let list = countdowns;
+  let fileError = null;
+  if (globalThis.__DOTS_VIA_LOADER && !String(param || '').includes('|')) {
+    const text = await downloadCountdowns();
+    if (text != null) {
+      const parsed = parseCountdowns(text);
+      if (parsed.list) list = parsed.list;
+      else fileError = parsed.error;
+      freshness = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    } else {
+      freshness = 'Saved copy';
+    }
+  }
+  let { task, error } = pickTask(list, param);
+  if (!task && fileError) error = fileError;
   const widget = task ? buildWidget(task, config.widgetFamily || 'large') : errorWidget(error);
   if (config.runsInWidget) {
     Script.setWidget(widget);

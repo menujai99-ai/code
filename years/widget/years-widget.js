@@ -1,41 +1,108 @@
 // Years — home-screen widget for iPhone (runs in the free "Scriptable" app).
 // One dot per year of your life or of a long goal; this year's dot fills in daily.
 //
-// Setup:
-//   1. Install Scriptable from the App Store.
-//   2. In Scriptable tap +, paste this whole file, name it "Years".
-//   3. On your home screen add a Scriptable widget (small, medium or large),
-//      long-press it → Edit Widget → Script: Years.
-//   4. Parameter: paste the line from Years → your item → "Home-screen widget",
-//      e.g.  life|My life|1999-05-10|2079-05-10|#1c7ed6
-//      (life or goal | name | start | end | colour). One widget per item.
+// Recommended: install years/widget/loader.js in Scriptable (named "Years")
+// instead of this file. The loader downloads this script on every refresh,
+// and this script reads your items from years/widget/years.json on GitHub,
+// which the Years app keeps up to date (Widget sync).
 //
-// If the parameter is empty, the DEFAULT below is used.
+// Widget Parameter (with the loader): the item's name (any capitalisation),
+// its number in years.json (1 = first), or empty for the first one.
+//
+// This file also still works pasted on its own, with the Parameter set to
+//   life|My life|1999-05-10|2079-05-10|#1c7ed6
+// (life or goal | name | start | end | colour).
 
 const DEFAULT = 'life|My life|1999-05-10|2079-05-10|#1c7ed6';
+// The items file straight from the repo: new commits show up here at once.
+const REPO_API = 'https://api.github.com/repos/menujai99-ai/code/contents/years/widget/years.json';
+// How often to ask iOS for a refresh (iOS decides the real timing).
+const REFRESH_MINUTES = 15;
 
 const DAY_MS = 86400000;
 const YEAR_DAYS = 365.2425;
 
-/* ---------- Parse the widget parameter ---------- */
+// Shown on the widget: when the items were last fetched.
+let freshness = '';
+
+/* ---------- Pick and parse the item ---------- */
 
 function parseDate(s) {
   const [y, m, d] = String(s || '').split('-').map(Number);
   return y && m && d ? new Date(y, m - 1, d) : null;
 }
+function validColor(c) {
+  return /^#[0-9a-f]{6}$/i.test(c || '') ? c : '#1c7ed6';
+}
 
-function parseItem(raw) {
-  const [kind, name, start, end, color] = String(raw || DEFAULT).split('|').map((s) => s.trim());
-  const s = parseDate(start);
-  const e = parseDate(end);
-  if (!s || !e || e <= s) return null;
-  return {
-    kind: kind === 'goal' ? 'goal' : 'life',
-    name: name || (kind === 'goal' ? 'Goal' : 'My life'),
-    start: s,
-    end: e,
-    color: /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#1c7ed6',
-  };
+/** Old format: "life|name|YYYY-MM-DD|YYYY-MM-DD|#colour". */
+function parseLine(raw) {
+  const [kind, name, start, end, color] = String(raw).split('|').map((x) => x.trim());
+  return parseEntry({ kind, name, start, end, color });
+}
+
+/** An entry of years.json: { kind, name, start, end, color? }. */
+function parseEntry(e) {
+  if (!e || typeof e !== 'object') return null;
+  const s = parseDate(e.start);
+  const en = parseDate(e.end);
+  if (!s || !en || en <= s) return null;
+  const kind = e.kind === 'goal' ? 'goal' : 'life';
+  return { kind, name: String(e.name || (kind === 'goal' ? 'Goal' : 'My life')), start: s, end: en, color: validColor(e.color) };
+}
+
+/** Parse years.json, forgiving a missing comma, trailing commas and curly quotes. */
+function parseItems(text) {
+  const asList = (v) => (Array.isArray(v) ? v : v && typeof v === 'object' ? [v] : null);
+  try {
+    const list = asList(JSON.parse(text));
+    if (list) return { list };
+  } catch (e) {
+    /* try the repaired version below */
+  }
+  const fixed = String(text)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\}(\s*)\{/g, '},$1{')
+    .replace(/,(\s*[\]}])/g, '$1');
+  try {
+    const list = asList(JSON.parse(fixed));
+    return list ? { list } : { error: 'years.json should be a list: [ {...}, {...} ]' };
+  } catch (e) {
+    return { error: `years.json has a typo (${e.message}).` };
+  }
+}
+
+/** Fresh years.json from the GitHub API, or null. One quick request. */
+async function downloadItems() {
+  try {
+    const req = new Request(`${REPO_API}?t=${Date.now()}`);
+    // Widgets get only a few seconds to run in the background; fail fast.
+    req.timeoutInterval = 6;
+    req.headers = { Accept: 'application/vnd.github.raw', 'User-Agent': 'Years-widget' };
+    const text = await req.loadString();
+    return req.response && req.response.statusCode === 200 ? text : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Returns { item } or { error }. */
+function pickItem(list, param) {
+  const p = String(param || '').trim();
+  if (p.includes('|')) {
+    const item = parseLine(p);
+    return item ? { item } : { error: 'Parameter format: life|name|YYYY-MM-DD|YYYY-MM-DD|#colour' };
+  }
+  const items = (Array.isArray(list) ? list : []).map(parseEntry).filter(Boolean);
+  if (!items.length) return { error: 'No items yet. In the Years app, turn on Widget sync (the cloud button).' };
+  if (!p) return { item: items[0] };
+  if (/^\d+$/.test(p)) {
+    const it = items[parseInt(p, 10) - 1];
+    return it ? { item: it } : { error: `There are only ${items.length} items.` };
+  }
+  const it = items.find((x) => x.name.toLowerCase() === p.toLowerCase());
+  return it ? { item: it } : { error: `No item named "${p}". Available: ${items.map((x) => x.name).join(', ')}` };
 }
 
 /* ---------- Same year maths as the app ---------- */
@@ -166,20 +233,25 @@ function buildWidget(item, family) {
   const w = new ListWidget();
   w.backgroundColor = BG;
   w.setPadding(14, 14, 14, 14);
-  // A year's dot only needs a daily refresh: just after midnight.
-  w.refreshAfterDate = new Date(addDays(startOfDay(now), 1).getTime() + 60000);
+  // Refresh at least daily (just after midnight) and every REFRESH_MINUTES for new items.
+  w.refreshAfterDate = new Date(Math.min(addDays(startOfDay(now), 1).getTime() + 60000, now.getTime() + REFRESH_MINUTES * 60000));
   w.url = 'scriptable:///run/' + encodeURIComponent(Script.name());
 
+  // Heights are tight (about 130pt of content in small/medium); anything that
+  // doesn't fit is cut off by iOS, so keep these stacks within budget.
   if (family === 'small') {
+    w.setPadding(12, 12, 12, 12);
     const top = w.addStack();
     top.centerAlignContent();
     addText(top, num, Font.heavySystemFont(24), accent);
     top.addSpacer(4);
     addText(top, label, Font.semiboldSystemFont(11), MUTED);
-    w.addSpacer(6);
-    w.addImage(drawDots(item, st, 130, 82, dark)).centerAlignImage();
+    w.addSpacer(4);
+    w.addImage(drawDots(item, st, 130, 56, dark)).centerAlignImage();
     w.addSpacer(4);
     addText(w, subline(item, st), Font.semiboldSystemFont(11), TEXT);
+    addEnds(w, item, st, 10, accent);
+    if (freshness) addText(w, freshness, Font.systemFont(9), MUTED);
     return w;
   }
 
@@ -190,14 +262,24 @@ function buildWidget(item, family) {
     const col = row.addStack();
     col.layoutVertically();
     col.size = new Size(116, 0);
-    addText(col, item.name, Font.semiboldSystemFont(13), TEXT, 2);
-    col.addSpacer(4);
-    addText(col, num, Font.heavySystemFont(36), accent);
-    addText(col, label, Font.semiboldSystemFont(12), MUTED);
-    col.addSpacer(4);
+    addText(col, item.name, Font.semiboldSystemFont(13), TEXT);
+    col.addSpacer(2);
+    const big = col.addStack();
+    big.layoutHorizontally();
+    big.bottomAlignContent();
+    addText(big, num, Font.heavySystemFont(30), accent);
+    big.addSpacer(4);
+    addText(big, label, Font.semiboldSystemFont(11), MUTED);
+    col.addSpacer(2);
     addText(col, subline(item, st), Font.systemFont(11), MUTED);
+    col.addSpacer(2);
+    addEnds(col, item, st, 11, accent, { stacked: true });
+    if (freshness) {
+      col.addSpacer(2);
+      addText(col, freshness, Font.systemFont(9), MUTED);
+    }
     row.addSpacer(10);
-    row.addImage(drawDots(item, st, 176, 128, dark));
+    row.addImage(drawDots(item, st, 176, 124, dark));
     return w;
   }
 
@@ -208,6 +290,8 @@ function buildWidget(item, family) {
   left.layoutVertically();
   addText(left, item.name, Font.semiboldSystemFont(15), TEXT);
   addText(left, subline(item, st), Font.systemFont(12), MUTED);
+  addEnds(left, item, st, 12, accent);
+  if (freshness) addText(left, freshness, Font.systemFont(10), MUTED);
   head.addSpacer();
   const right = head.addStack();
   right.layoutVertically();
@@ -219,6 +303,41 @@ function buildWidget(item, family) {
   return w;
 }
 
+/**
+ * "Ends in 52 years, 7 months" — drawn by iOS in relative style, so it keeps
+ * counting down between widget refreshes. A life reads "Birthday in …".
+ */
+function addEnds(stack, item, st, size, color, { stacked = false } = {}) {
+  const row = stack.addStack();
+  if (stacked) row.layoutVertically();
+  else {
+    row.layoutHorizontally();
+    row.centerAlignContent();
+    row.spacing = 3;
+  }
+  if (st.state === 'done') {
+    addText(row, 'Completed', Font.semiboldSystemFont(size), color);
+    return row;
+  }
+  let label = 'Ends in';
+  let date = item.end;
+  if (st.state === 'upcoming') {
+    label = 'Starts in';
+    date = item.start;
+  } else if (item.kind === 'life') {
+    label = 'Birthday in';
+    date = addYears(item.start, st.idx + 1);
+  }
+  addText(row, label, Font.systemFont(size), MUTED);
+  const d = row.addDate(date);
+  d.applyRelativeStyle();
+  d.font = Font.semiboldSystemFont(size);
+  d.textColor = color;
+  d.lineLimit = 1;
+  d.minimumScaleFactor = 0.6;
+  return row;
+}
+
 function errorWidget(msg) {
   const w = new ListWidget();
   w.backgroundColor = BG;
@@ -228,15 +347,37 @@ function errorWidget(msg) {
   return w;
 }
 
-const item = parseItem(args.widgetParameter);
-const family = config.widgetFamily || 'large';
-const widget = item
-  ? buildWidget(item, family)
-  : errorWidget('Set the widget Parameter to: life|name|YYYY-MM-DD|YYYY-MM-DD|#colour (copy it from the Years app).');
+/* ---------- Entry points ---------- */
 
-if (config.runsInWidget) {
-  Script.setWidget(widget);
-} else {
-  await widget.presentLarge();
+/** Build and show the widget. Called by loader.js, or below when pasted directly. */
+async function main({ items, param } = {}) {
+  let list = items;
+  let fileError = null;
+  if (globalThis.__YEARS_VIA_LOADER && !String(param || '').includes('|')) {
+    const text = await downloadItems();
+    if (text != null) {
+      const parsed = parseItems(text);
+      if (parsed.list) list = parsed.list;
+      else fileError = parsed.error;
+      freshness = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    } else {
+      freshness = 'Saved copy';
+    }
+  }
+  let { item, error } = pickItem(list, param);
+  if (!item && fileError) error = fileError;
+  const widget = item ? buildWidget(item, config.widgetFamily || 'large') : errorWidget(error);
+  if (config.runsInWidget) {
+    Script.setWidget(widget);
+  } else {
+    await widget.presentLarge();
+  }
+  Script.complete();
 }
-Script.complete();
+
+module.exports = { main };
+
+// Pasted straight into Scriptable (no loader): use the Parameter line, or DEFAULT.
+if (!globalThis.__YEARS_VIA_LOADER) {
+  main({ param: args.widgetParameter || DEFAULT });
+}
