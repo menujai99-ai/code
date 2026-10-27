@@ -272,8 +272,7 @@ body {
 .field span small { font-weight: 500; }
 .field select { -webkit-appearance: auto; appearance: auto; }
 .field input:focus, .field select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-.segmented.three { grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; }
-.segmented.three label { padding: 8px 4px; font-size: 13px; }
+.kind-switch { margin-bottom: 16px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
 .chips button { font: inherit; font-size: 13px; font-weight: 600; border: 1px solid var(--line); border-radius: 999px; padding: 6px 11px; background: var(--surface-2); color: var(--text); cursor: pointer; }
 .tier-preview { margin: -6px 0 14px; font-size: 13px; padding: 9px 12px; border-radius: 12px; background: color-mix(in srgb, var(--gold) 11%, transparent); border: 1px dashed color-mix(in srgb, var(--gold) 50%, transparent); }
@@ -289,3 +288,75 @@ body {
 .party-list { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 8px; text-align: left; }
 .party-list li { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; font-size: 15px; }
 .confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; pointer-events: none; z-index: 1000; }
+
+/* ---------- Spending (meant to sting) ---------- */
+.spend-link {
+  width: 100%; margin-top: 10px; font-size: 14px;
+  background: transparent; box-shadow: none; color: var(--danger);
+  border: 1.5px dashed color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.spend-btn { color: var(--danger); }
+
+.leak {
+  margin-top: 12px; padding: 8px 12px; border-radius: 12px; font-size: 13.5px;
+  background: rgba(224, 49, 70, 0.22); border: 1px solid rgba(255, 140, 150, 0.35); color: #ffe1e4;
+  animation: leak-pulse 2.4s ease-in-out infinite;
+}
+.leak b { font-weight: 700; }
+.spent-line { margin-top: 10px; font-size: 13px; color: color-mix(in srgb, var(--ink) 70%, transparent); }
+@keyframes leak-pulse { 50% { background: rgba(224, 49, 70, 0.34); } }
+
+.spend h2 { color: var(--danger); }
+.bill {
+  margin: 0 0 12px; padding: 12px 14px; border-radius: 14px;
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--danger) 50%, transparent);
+}
+.bill h3 { margin: 0 0 8px; font: 700 16px/1.2 var(--serif); color: var(--danger); }
+.bill ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 14px; }
+.ghost-btn { background: transparent; box-shadow: none; color: var(--accent); padding-left: 0; padding-right: 0; margin-bottom: 4px; }
+.spend-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hold {
+  position: relative; overflow: hidden; isolation: isolate;
+  background: var(--surface-2); color: var(--danger); box-shadow: none;
+  border: 1.5px solid color-mix(in srgb, var(--danger) 55%, transparent);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none;
+}
+.hold:disabled { opacity: 0.45; cursor: not-allowed; }
+.hold-fill {
+  position: absolute; inset: 0; z-index: -1; transform-origin: left; transform: scaleX(0);
+  background: var(--danger);
+}
+.hold.holding { color: #fff; }
+.hold.holding .hold-fill { transform: scaleX(1); transition: transform 3s linear; }
+.hold-label { font-size: 13px; }
+
+/* Shame dialog: the celebration's evil twin */
+.party.shame { border-top: 4px solid var(--danger); }
+.party.shame h2 { color: var(--danger); }
+.party.shame .party-list li { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+.party.shame .party-icon { animation: sink 1.2s ease-in both; }
+@keyframes sink { from { transform: translateY(-30px) rotate(-12deg); opacity: 0; } }
+.party.shame .btn.primary { background: var(--danger); box-shadow: none; }
+
+/* Cracked, dripping jar while it leaks */
+.jar-crack path { fill: none; stroke: color-mix(in srgb, var(--text) 70%, transparent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.jar.mini .jar-crack path { stroke-width: 6; }
+.drip { fill: var(--danger); animation: drip 1.8s ease-in infinite; opacity: 0; }
+.drip.d2 { animation-delay: 0.6s; }
+.drip.d3 { animation-delay: 1.2s; }
+@keyframes drip {
+  0% { transform: translateY(-6px); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(26px); opacity: 0; }
+}
+.jar-box.draining .jar { animation: shake 0.5s ease-in-out 2; }
+.jar-box.draining .liq-top { stop-color: color-mix(in srgb, var(--danger) 60%, var(--c)); transition: stop-color 0.3s; }
+@keyframes shake {
+  25% { transform: translateX(-5px) rotate(-1.5deg); }
+  75% { transform: translateX(5px) rotate(1.5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drip, .leak, .jar-box.draining .jar, .party.shame .party-icon { animation: none; }
+  .drip { opacity: 1; }
+}

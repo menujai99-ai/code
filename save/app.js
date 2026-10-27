@@ -75,6 +75,7 @@ function cleanState(raw) {
   if (raw.settings) {
     if (CURRENCIES.includes(raw.settings.currency)) s.settings.currency = raw.settings.currency;
     if (raw.settings.big > 0) s.settings.big = Number(raw.settings.big);
+    if (raw.settings.wage > 0) s.settings.wage = Number(raw.settings.wage);
   }
   const arr = (a) => (Array.isArray(a) ? a : []);
   s.goals = arr(raw.goals).filter((g) => g && g.id && g.name && g.target > 0);
@@ -150,9 +151,30 @@ function milestoneXP(goal, quarter) {
   return quarter === 4 ? base * 2 : base;
 }
 const WAIT_BONUS = 1.5;
-function txXP(t, goal) {
+
+/* Spending is meant to hurt:
+ * - it takes back SPEND_PENALTY × the XP that money earned,
+ * - it resets your saving streak,
+ * - and for LEAK_MS afterwards the jar "leaks": saving earns only LEAK_MULT × XP. */
+const SPEND_PENALTY = 2;
+const LEAK_MS = 3 * DAY_MS;
+const LEAK_MULT = 0.5;
+
+/** When the leak that covers `time` ends, or 0 if none does. */
+function leakEnd(time = Date.now(), tx = state.tx) {
+  let end = 0;
+  for (const x of tx) if (x.kind === 'take' && x.at < time && time <= x.at + LEAK_MS) end = Math.max(end, x.at + LEAK_MS);
+  return end;
+}
+/** Goals that had money spent from them during the current leak. */
+function leakingGoal(goalId, now = Date.now()) {
+  return state.tx.some((x) => x.kind === 'take' && x.goalId === goalId && now - x.at < LEAK_MS);
+}
+
+function txXP(t, goal, tx = state.tx) {
   const pts = (t.amount / unit()) * tierOf(goal.target).mult * (t.kind === 'skip' && t.waited ? WAIT_BONUS : 1) / 10;
-  return t.kind === 'take' ? -pts : pts;
+  if (t.kind === 'take') return -pts * SPEND_PENALTY;
+  return leakEnd(t.at ?? Date.now(), tx) ? pts * LEAK_MULT : pts;
 }
 
 function xpForLevel(l) {
@@ -194,9 +216,11 @@ function savedFor(goalId) {
   return Math.max(0, s);
 }
 
-/** Days (local ISO) with money put away, and the current / best runs of consecutive days. */
+/** Days (local ISO) with money put away, and the current / best runs of consecutive days.
+ * A day you spent from a jar never counts, so spending breaks the streak. */
 function streaks(now = new Date()) {
-  const days = new Set(state.tx.filter((t) => t.kind !== 'take').map((t) => toISODate(new Date(t.at))));
+  const spendDays = new Set(state.tx.filter((t) => t.kind === 'take').map((t) => toISODate(new Date(t.at))));
+  const days = new Set(state.tx.filter((t) => t.kind !== 'take').map((t) => toISODate(new Date(t.at))).filter((d) => !spendDays.has(d)));
   const sorted = [...days].sort();
   let best = 0;
   let run = 0;
@@ -208,6 +232,7 @@ function streaks(now = new Date()) {
   }
   let cur = 0;
   let day = startOfDay(now);
+  if (spendDays.has(toISODate(day))) return { cur: 0, best, today: false, broken: true };
   if (!days.has(toISODate(day))) day = new Date(day.getFullYear(), day.getMonth(), day.getDate() - 1);
   while (days.has(toISODate(day))) {
     cur++;
@@ -220,12 +245,17 @@ function streaks(now = new Date()) {
 function computeRewards() {
   const goalById = new Map(state.goals.map((g) => [g.id, g]));
   const tierIdx = (g) => tiers().findIndex((t) => t.key === tierOf(g.target).key);
-  const c = { deposits: 0, skips: 0, waitedSkips: 0, skipped: 0, total: 0, maxTier: -1, bestPct: 0, completed: 0, completedTier: -1 };
+  const c = { deposits: 0, skips: 0, waitedSkips: 0, skipped: 0, spent: 0, spentXP: 0, total: 0, maxTier: -1, bestPct: 0, completed: 0, completedTier: -1 };
   let xp = 0;
   for (const t of state.tx) {
     const g = goalById.get(t.goalId);
-    xp += txXP(t, g);
+    const x = txXP(t, g);
+    xp += x;
     if (t.kind === 'add') c.deposits++;
+    if (t.kind === 'take') {
+      c.spent += t.amount;
+      c.spentXP -= x;
+    }
     if (t.kind === 'skip') {
       c.deposits++;
       c.skips++;
@@ -335,6 +365,10 @@ function renderHome() {
   $('stat-streak').textContent = `${r.streak.cur} ${r.streak.cur === 1 ? 'day' : 'days'}${r.streak.cur && !r.streak.today ? ' ⏳' : r.streak.cur ? ' 🔥' : ''}`;
   $('stat-streak').title = r.streak.cur && !r.streak.today ? 'Save something today to keep the streak' : '';
   $('stat-skipped').textContent = money(r.counts.skipped);
+  const spentLine = $('spent-line');
+  spentLine.hidden = !r.counts.spent;
+  spentLine.textContent = `💸 Spent from jars: ${money(r.counts.spent)} · cost you ${fmtNum.format(Math.round(r.counts.spentXP))} XP`;
+  updateLeak();
 
   // Goals
   const list = $('goal-list');
@@ -357,7 +391,7 @@ function renderHome() {
     const body = el('div', 'card-body');
     body.append(head, sub);
     const mini = el('div', 'mini-jar');
-    mini.innerHTML = jarSVG(st.pct, { mini: true });
+    mini.innerHTML = jarSVG(st.pct, { mini: true, cracked: leakingGoal(g.id) });
     btn.classList.add('with-jar');
     btn.append(mini, body);
     li.append(btn);
@@ -516,7 +550,10 @@ function renderDetail(now = new Date()) {
   for (const t of txs) {
     const li = el('li');
     const text = el('div', 'h-text');
-    const label = t.kind === 'skip' ? `Skipped${t.note ? `: ${t.note}` : ''}${t.waited ? ' ⏳' : ''}` : t.note || (t.kind === 'take' ? 'Took out' : 'Saved');
+    const label =
+      t.kind === 'skip' ? `Skipped${t.note ? `: ${t.note}` : ''}${t.waited ? ' ⏳' : ''}`
+      : t.kind === 'take' ? `💸 Spent${t.note ? `: ${t.note}` : ''}`
+      : `${t.note || 'Saved'}${leakEnd(t.at) ? ' 🩸' : ''}`;
     const xp = Math.round(txXP(t, g));
     text.append(el('span', null, label), el('small', null, `${fmtDate.format(new Date(t.at))} · ${xp >= 0 ? '+' : ''}${xp} XP`));
     const amt = el('span', `h-amt mono${t.kind === 'take' ? ' neg' : ''}`, `${t.kind === 'take' ? '−' : '+'}${money(t.amount)}`);
@@ -549,7 +586,7 @@ function levelY(pct) {
 }
 
 /** The jar as an SVG string. Colour comes from --c on a parent. */
-function jarSVG(pct, { mini = false } = {}) {
+function jarSVG(pct, { mini = false, cracked = false } = {}) {
   const id = `jar${++jarSeq}`;
   const ticks = mini
     ? ''
@@ -582,6 +619,8 @@ function jarSVG(pct, { mini = false } = {}) {
   <rect class="jar-lid" x="54" y="12" width="92" height="24" rx="7"/>
   <line class="jar-lid-line" x1="58" x2="142" y1="24" y2="24"/>
   ${label}
+  ${cracked ? `<g class="jar-crack"><path d="M168 86 L156 100 L166 110 L150 126 L158 134 L146 142"/><path d="M156 100 L144 98"/><path d="M150 126 L140 124"/></g>
+  <g class="jar-drips"><circle class="drip d1" cx="70" cy="258" r="${mini ? 7 : 4}"/><circle class="drip d2" cx="110" cy="258" r="${mini ? 6 : 3.5}"/><circle class="drip d3" cx="135" cy="258" r="${mini ? 6 : 3}"/></g>` : ''}
   <circle class="jar-coin" cx="100" cy="-20" r="13"/>
 </svg>`;
 }
@@ -593,17 +632,19 @@ function renderJar(g, st) {
   const box = $('jar-box');
   const prev = lastPct.has(g.id) ? lastPct.get(g.id) : st.pct;
   lastPct.set(g.id, st.pct);
-  box.innerHTML = jarSVG(prev);
+  box.innerHTML = jarSVG(prev, { cracked: leakingGoal(g.id) });
   box.setAttribute('aria-label', `Jar ${Math.floor(st.pct * 100)}% full: ${money(st.saved)} of ${money(g.target)}`);
   const svg = box.querySelector('svg');
   const level = svg.querySelector('.jar-level');
   const pctText = svg.querySelector('.jar-pct');
+  box.classList.remove('draining');
   if (st.pct !== prev) {
     // Let the browser paint the old level first, then animate to the new one.
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         level.style.transform = `translateY(${levelY(st.pct)}px)`;
         pctText.textContent = `${Math.floor(st.pct * 100)}%`;
+        if (st.pct < prev) box.classList.add('draining');
         if (st.pct > prev) {
           const coin = svg.querySelector('.jar-coin');
           coin.style.setProperty('--fall', `${levelY(st.pct) + 22}px`);
@@ -649,6 +690,8 @@ $('back-btn').addEventListener('click', () => {
 });
 
 /* ---------- Sheets: shared ---------- */
+
+const partyDialog = $('party-dialog');
 
 for (const d of document.querySelectorAll('dialog')) {
   d.addEventListener('click', (e) => {
@@ -772,7 +815,7 @@ function moneyKind() {
 
 function updateMoneyForm() {
   const kind = moneyKind();
-  $('money-title').textContent = kind === 'take' ? 'Take money out' : kind === 'skip' ? 'I skipped a buy' : 'Add money';
+  $('money-title').textContent = kind === 'skip' ? 'I skipped a buy' : 'Add money';
   $('m-note-label').textContent = kind === 'skip' ? 'What did you skip?' : 'Note';
   $('m-note').placeholder = kind === 'skip' ? 'e.g. Takeaway coffee' : 'optional';
 
@@ -780,7 +823,7 @@ function updateMoneyForm() {
   const amount = parseFloat($('m-amount').value);
   const chips = $('m-chips');
   chips.textContent = '';
-  if (g && kind !== 'take') {
+  if (g) {
     const st = goalStatus(g);
     const options = new Set([5, 10, 20, 50, 100].map((x) => niceRound(x * unit())));
     if (st.perWeek) options.add(Math.ceil(st.perWeek));
@@ -798,14 +841,9 @@ function updateMoneyForm() {
   const hint = $('m-hint');
   hint.textContent = '';
   if (g && amount > 0) {
-    if (kind === 'take') {
-      const saved = savedFor(g.id);
-      hint.textContent = amount > saved + 1e-9 ? `Only ${money(saved)} saved in this goal.` : `−${Math.round(txXP({ kind, amount }, g) * -1)} XP. It's okay — life happens.`;
-    } else {
-      const xp = Math.round(txXP({ kind, amount, waited: moneyCtx.waited }, g));
-      const tier = tierOf(g.target);
-      hint.textContent = `+${xp} XP (${tier.icon} ×${tier.mult}${kind === 'skip' && moneyCtx.waited ? `, ⏳ ×${WAIT_BONUS} for waiting` : ''})`;
-    }
+    const xp = Math.round(txXP({ kind, amount, waited: moneyCtx.waited }, g));
+    const tier = tierOf(g.target);
+    hint.textContent = `+${xp} XP (${tier.icon} ×${tier.mult}${kind === 'skip' && moneyCtx.waited ? `, ⏳ ×${WAIT_BONUS} for waiting` : ''}${leakEnd() ? `, 🩸 ×${LEAK_MULT} leaky jar` : ''})`;
   }
 }
 moneyForm.addEventListener('input', updateMoneyForm);
@@ -842,7 +880,6 @@ moneyForm.addEventListener('submit', (e) => {
   const amount = Math.round(parseFloat($('m-amount').value) * 100) / 100;
   const goalId = $('m-goal').value;
   if (!(amount > 0)) return void ($('m-hint').textContent = 'Enter an amount.');
-  if (kind === 'take' && amount > savedFor(goalId) + 1e-9) return void ($('m-hint').textContent = `Only ${money(savedFor(goalId))} saved in this goal.`);
   const { wantId, waited } = moneyCtx;
   withRewards(() => {
     state.tx.push({ id: uid(), goalId, kind, amount, note: $('m-note').value.trim(), at: Date.now(), waited: kind === 'skip' && !!waited });
@@ -855,17 +892,178 @@ moneyForm.addEventListener('submit', (e) => {
 $('quick-add').addEventListener('click', () => openMoney({ kind: 'add' }));
 $('quick-skip').addEventListener('click', () => openMoney({ kind: 'skip' }));
 $('detail-add').addEventListener('click', () => openMoney({ kind: 'add', goalId: openId }));
-$('detail-take').addEventListener('click', () => openMoney({ kind: 'take', goalId: openId }));
+$('detail-take').addEventListener('click', () => openSpend(openId));
+$('quick-spend').addEventListener('click', () => openSpend(null));
+
+/* ---------- Spend sheet (deliberately painful) ---------- */
+
+const spendDialog = $('spend-dialog');
+const HOLD_MS = 3000;
+
+function spendDraft() {
+  const amount = Math.round(parseFloat($('x-amount').value) * 100) / 100;
+  const goalId = $('x-goal').value;
+  const g = state.goals.find((x) => x.id === goalId);
+  return { amount, goalId, g, note: $('x-note').value.trim() };
+}
+
+/** Everything this spend would cost, worked out by trying it on a copy of the history. */
+function spendBill({ amount, goalId, g }) {
+  const before = computeRewards();
+  const st = goalStatus(g);
+  const fake = { id: 'draft', goalId, kind: 'take', amount, note: '', at: Date.now() };
+  state.tx.push(fake);
+  const after = computeRewards();
+  const stAfter = goalStatus(g);
+  state.tx.pop();
+
+  const lines = [];
+  const penalty = Math.round(-txXP(fake, g));
+  lines.push(`➖ ${fmtNum.format(before.xp - after.xp)} XP in total`);
+  lines.push(`💸 ${fmtNum.format(penalty)} XP spending penalty — ${SPEND_PENALTY}× what this money earned you`);
+  if (after.level < before.level) lines.push(`⬇️ Drop to level ${after.level}: ${titleOf(after.level)}`);
+  lines.push(`🫙 ${g.name} drains from ${Math.floor(st.pct * 100)}% to ${Math.floor(stAfter.pct * 100)}%`);
+  for (const key of before.milestones) {
+    if (after.milestones.has(key)) continue;
+    const [id, q] = key.split(':');
+    const mg = state.goals.find((x) => x.id === id);
+    lines.push(`🏳️ Lose the ${Number(q) * 25}% milestone of ${mg.name}`);
+  }
+  for (const b of BADGES) if (before.badges.has(b.id) && !after.badges.has(b.id)) lines.push(`${b.icon} Lose the “${b.name}” badge`);
+  if (before.streak.cur > 0) lines.push(`💀 Your ${before.streak.cur}-day streak resets to 0`);
+  else lines.push('💀 Today can’t count toward a streak');
+  const perDay = st.perDay || (st.avgWeek ? st.avgWeek / 7 : 0);
+  if (perDay > 0) lines.push(`⏪ Undoes about ${plural(Math.max(1, Math.round(amount / perDay)), 'day')} of saving`);
+  if (state.settings.wage > 0) lines.push(`⏱️ That's ${(amount / state.settings.wage).toFixed(1)} hours of your work`);
+  lines.push(`🩸 Leaky jar: everything you save earns half XP for the next 3 days`);
+  return lines;
+}
+
+function updateSpend() {
+  const d = spendDraft();
+  const hint = $('x-hint');
+  const bill = $('x-bill');
+  const hold = $('x-hold');
+  hint.textContent = '';
+  bill.hidden = true;
+  hold.disabled = true;
+  if (!d.g) return;
+  const saved = savedFor(d.goalId);
+  if (!(d.amount > 0)) return;
+  if (d.amount > saved + 1e-9) {
+    hint.textContent = `There's only ${money(saved)} in this jar.`;
+    return;
+  }
+  const list = $('x-bill-list');
+  list.textContent = '';
+  for (const line of spendBill(d)) list.append(el('li', null, line));
+  bill.hidden = false;
+  if (!d.note) {
+    hint.textContent = 'Say what it’s for before you can spend.';
+    return;
+  }
+  hold.disabled = false;
+}
+$('spend-form').addEventListener('input', updateSpend);
+$('spend-form').addEventListener('change', updateSpend);
+$('spend-form').addEventListener('submit', (e) => e.preventDefault());
+
+function openSpend(goalId) {
+  const goals = state.goals.filter((g) => savedFor(g.id) > 0);
+  if (!goals.length) {
+    alert('Your jars are empty — nothing to spend. Keep it that way 😉');
+    return;
+  }
+  const sel = $('x-goal');
+  sel.textContent = '';
+  for (const g of goals) {
+    const o = el('option', null, `${g.name} · ${money(savedFor(g.id))}`);
+    o.value = g.id;
+    sel.append(o);
+  }
+  sel.value = goalId && goals.some((g) => g.id === goalId) ? goalId : goals[0].id;
+  $('x-amount').value = '';
+  $('x-note').value = '';
+  resetHold();
+  updateSpend();
+  spendDialog.showModal();
+}
+
+$('x-wait').addEventListener('click', () => {
+  const d = spendDraft();
+  spendDialog.close();
+  openWant(d.note, d.amount > 0 ? d.amount : '');
+});
+
+/* Hold-to-spend: the button has to be held down for HOLD_MS. Letting go cancels. */
+let holdTimer = 0;
+const holdBtn = $('x-hold');
+function resetHold() {
+  clearTimeout(holdTimer);
+  holdBtn.classList.remove('holding');
+  holdBtn.querySelector('.hold-label').textContent = 'Hold 3 s to spend';
+}
+function startHold(e) {
+  if (holdBtn.disabled || holdBtn.classList.contains('holding')) return;
+  e.preventDefault();
+  holdBtn.classList.add('holding');
+  holdBtn.querySelector('.hold-label').textContent = 'Keep holding… (let go to keep it)';
+  if (navigator.vibrate) navigator.vibrate(30);
+  holdTimer = setTimeout(doSpend, HOLD_MS);
+}
+holdBtn.addEventListener('pointerdown', startHold);
+holdBtn.addEventListener('keydown', (e) => {
+  if (e.key === ' ' || e.key === 'Enter') startHold(e);
+});
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel', 'keyup', 'blur']) holdBtn.addEventListener(ev, resetHold);
+holdBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+function doSpend() {
+  const d = spendDraft();
+  resetHold();
+  if (!d.g || !(d.amount > 0) || d.amount > savedFor(d.goalId) + 1e-9 || !d.note) return;
+  const lines = spendBill(d);
+  state.tx.push({ id: uid(), goalId: d.goalId, kind: 'take', amount: d.amount, note: d.note, at: Date.now(), waited: false });
+  saveState();
+  spendDialog.close();
+  if (navigator.vibrate) navigator.vibrate([80, 60, 160]);
+  rerender();
+  shame(d, lines);
+}
+
+/** The opposite of a celebration. */
+function shame(d, lines) {
+  partyDialog.classList.add('shame');
+  $('party-icon').textContent = '💸';
+  $('party-title').textContent = `${money(d.amount)} gone`;
+  const list = $('party-list');
+  list.textContent = '';
+  for (const t of lines) list.append(el('li', null, t));
+  partyDialog.querySelector('[data-close]').textContent = 'I’ll do better';
+  partyDialog.showModal();
+}
+partyDialog.addEventListener('close', () => {
+  partyDialog.classList.remove('shame');
+  partyDialog.querySelector('[data-close]').textContent = 'Keep going';
+});
+
+/** Countdown on the home screen while the leak lasts. */
+function updateLeak(now = Date.now()) {
+  const end = leakEnd(now);
+  $('leak').hidden = !end;
+  if (end) $('leak-timer').textContent = formatSpan(end - now);
+}
 
 /* ---------- Want sheet ---------- */
 
 const wantDialog = $('want-dialog');
-$('want-add').addEventListener('click', () => {
-  $('w-name').value = '';
-  $('w-price').value = '';
+function openWant(name = '', price = '') {
+  $('w-name').value = name;
+  $('w-price').value = price;
   $('w-hint').textContent = '';
   wantDialog.showModal();
-});
+}
+$('want-add').addEventListener('click', () => openWant());
 $('want-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const name = $('w-name').value.trim();
@@ -889,6 +1087,7 @@ for (const c of CURRENCIES) {
 $('settings-btn').addEventListener('click', () => {
   $('s-currency').value = state.settings.currency;
   $('s-big').value = state.settings.big;
+  $('s-wage').value = state.settings.wage || '';
   settingsDialog.showModal();
 });
 $('s-currency').addEventListener('change', () => {
@@ -900,6 +1099,9 @@ $('settings-form').addEventListener('submit', (e) => {
   const big = parseFloat($('s-big').value);
   state.settings.currency = $('s-currency').value;
   if (big > 0) state.settings.big = big;
+  const wage = parseFloat($('s-wage').value);
+  if (wage > 0) state.settings.wage = wage;
+  else delete state.settings.wage;
   saveState();
   setupMoney();
   settingsDialog.close();
@@ -937,7 +1139,6 @@ $('s-import').addEventListener('change', (e) => {
 
 /* ---------- Celebration ---------- */
 
-const partyDialog = $('party-dialog');
 
 function celebrate(before, after) {
   const items = [];
@@ -1049,13 +1250,17 @@ function confetti(count) {
 /* ---------- Timer (want-list countdowns, day rollover) ---------- */
 
 let lastDay = toISODate(new Date());
+let wasLeaking = !!leakEnd();
 setInterval(() => {
   const today = toISODate(new Date());
-  if (today !== lastDay) {
+  const leaking = !!leakEnd();
+  if (today !== lastDay || leaking !== wasLeaking) {
     lastDay = today;
-    rerender();
+    wasLeaking = leaking;
+    rerender(); // a new day, or the leak just healed
   } else if (!listView.hidden) {
     updateWantTimers();
+    updateLeak();
   }
 }, 1000);
 document.addEventListener('visibilitychange', () => {

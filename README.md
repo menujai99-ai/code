@@ -82,7 +82,8 @@ A third app in [`save/`](save/), with its own banknote-and-gold look, for **buil
 - **XP, levels and badges.** Level up from Seedling Saver to Legend of Thrift. Badges for streaks, skipping purchases, halfway, finishing a Big or Huge goal and more. New ones show up with confetti.
 - **I skipped a buy.** Didn't buy the coffee? Log it, and the money goes to a goal.
 - **Want list (cool-off).** Add something you're tempted by and wait 24h to 30 days. If you skip it after the wait, it earns ×1.5 XP. If you still want it, buy it guilt-free.
-- **Streaks** for each day you put money away. Withdrawals are allowed, but they take back their XP.
+- **Streaks** for each day you put money away.
+- **Spending hurts — on purpose.** You can spend money from a jar, but first you see **the bill**: XP lost (spending takes back 2× what that money earned), level drop, milestones and badges you'd lose, your streak reset, days of saving undone, and hours of work it cost (set your hourly pay in Settings). You have to say what it's for, and **hold the button for 3 seconds** — let go and nothing happens. Afterwards the jar is **cracked and leaking**: for 3 days everything you save earns half XP, and the home screen counts the leak down. There's always a "put it on the want list instead" way out.
 - Everything stays on your device. Use **Export / Import backup** in Settings to move it. Lives at `https://menujai99-ai.github.io/code/save/`.
 
 ## Files

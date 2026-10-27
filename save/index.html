@@ -44,12 +44,15 @@
         <div><span class="timer-label">Streak</span><b id="stat-streak" class="mono">0</b></div>
         <div><span class="timer-label">Skipped</span><b id="stat-skipped" class="mono">0</b></div>
       </div>
+      <div id="leak" class="leak" hidden>🩸 <b>Leaky jar</b> — saving earns half XP for <span id="leak-timer" class="mono">--</span></div>
+      <div id="spent-line" class="spent-line" hidden></div>
     </section>
 
     <div class="quick">
       <button id="quick-add" class="btn primary">+ Add money</button>
       <button id="quick-skip" class="btn">I skipped a buy</button>
     </div>
+    <button id="quick-spend" class="btn spend-link">💸 Spend money from a jar…</button>
 
     <h2 class="section">Goals</h2>
     <ul id="goal-list" class="task-list"></ul>
@@ -107,7 +110,7 @@
 
     <div class="quick">
       <button id="detail-add" class="btn primary">+ Add money</button>
-      <button id="detail-take" class="btn">Take out</button>
+      <button id="detail-take" class="btn spend-btn">💸 Spend</button>
     </div>
 
     <section class="reward-card">
@@ -166,13 +169,11 @@
   <dialog id="money-dialog" class="sheet">
     <form id="money-form" method="dialog">
       <h2 id="money-title">Add money</h2>
-      <div class="segmented three">
+      <div class="segmented kind-switch">
         <input type="radio" id="m-add" name="kind" value="add" checked />
         <label for="m-add">Saved</label>
         <input type="radio" id="m-skip" name="kind" value="skip" />
         <label for="m-skip">Skipped a buy</label>
-        <input type="radio" id="m-take" name="kind" value="take" />
-        <label for="m-take">Took out</label>
       </div>
       <label class="field">
         <span>Amount</span>
@@ -241,12 +242,49 @@
         <input id="s-big" type="number" inputmode="decimal" min="1" step="any" />
         <small class="hint">Sets the reward tiers: Solid from ¼ of this, Big from this, Huge from 5×. Pick what feels like a real stretch for you.</small>
       </label>
+      <label class="field">
+        <span>What I earn per hour <small>(optional)</small></span>
+        <input id="s-wage" type="number" inputmode="decimal" min="0" step="any" placeholder="e.g. 20" />
+        <small class="hint">When you spend, Stash tells you how many hours of work it cost.</small>
+      </label>
       <div class="actions wrap">
         <button type="button" id="s-export" class="btn small">Export backup</button>
         <label class="btn small file-btn">Import backup<input id="s-import" type="file" accept="application/json,.json" /></label>
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Spend sheet: deliberately painful -->
+  <dialog id="spend-dialog" class="sheet spend">
+    <form id="spend-form" method="dialog">
+      <h2>💸 Spend from a jar</h2>
+      <p class="muted">Taking money out costs you more than it earned you. Read the bill first.</p>
+      <label class="field">
+        <span>How much?</span>
+        <input id="x-amount" type="number" inputmode="decimal" min="0.01" step="any" placeholder="0" />
+      </label>
+      <label class="field">
+        <span>From which jar?</span>
+        <select id="x-goal"></select>
+      </label>
+      <label class="field">
+        <span>What is it for? <small>(own it)</small></span>
+        <input id="x-note" type="text" maxlength="80" placeholder="e.g. New sneakers" />
+      </label>
+      <div id="x-bill" class="bill" hidden>
+        <h3>The bill</h3>
+        <ul id="x-bill-list"></ul>
+      </div>
+      <small id="x-hint" class="hint"></small>
+      <button type="button" id="x-wait" class="btn small ghost-btn">⏳ Not urgent? Put it on the want list instead</button>
+      <div class="actions spend-actions">
+        <button type="button" class="btn primary" data-close>Keep my money</button>
+        <button type="button" id="x-hold" class="btn hold" disabled>
+          <span class="hold-fill"></span><span class="hold-label">Hold 3 s to spend</span>
+        </button>
       </div>
     </form>
   </dialog>
