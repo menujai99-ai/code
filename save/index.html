@@ -12,7 +12,7 @@
   <title>Stash — Save Money</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
-  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="stylesheet" href="styles.css" />
   <link rel="stylesheet" href="stash.css" />
 </head>
@@ -28,6 +28,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
       </button>
     </header>
+
+    <!-- Shown in a normal browser tab until the app is installed or dismissed -->
+    <div id="install-banner" class="install-banner" hidden>
+      <span>📲 Put Stash on your home screen — it opens like a real app and works offline.</span>
+      <button type="button" id="install-banner-btn" class="btn small primary">Install</button>
+      <button type="button" id="install-banner-close" class="banner-close" aria-label="Dismiss">×</button>
+    </div>
 
     <!-- Level / rewards -->
     <section class="level-card">
@@ -247,12 +254,45 @@
         <input id="s-wage" type="number" inputmode="decimal" min="0" step="any" placeholder="e.g. 20" />
         <small class="hint">When you spend, Stash tells you how many hours of work it cost.</small>
       </label>
-      <div class="actions wrap">
-        <button type="button" id="s-export" class="btn small">Export backup</button>
-        <label class="btn small file-btn">Import backup<input id="s-import" type="file" accept="application/json,.json" /></label>
+      <div class="settings-group">
+        <span class="group-label">Your data</span>
+        <div class="actions wrap">
+          <button type="button" id="s-install" class="btn small">📲 Install on my phone</button>
+          <button type="button" id="s-export" class="btn small">Export backup</button>
+          <label class="btn small file-btn">Import backup<input id="s-import" type="file" accept="application/json,.json" /></label>
+          <button type="button" id="s-reset" class="btn small reset-btn">Start over…</button>
+        </div>
+      </div>
+      <div class="actions">
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Install on phone -->
+  <dialog id="install-dialog" class="sheet">
+    <h2>📲 Install on your phone</h2>
+    <div id="install-body"></div>
+    <p class="muted install-note">Your jars are saved on each device separately. To move them from another device, use <b>Export backup</b> there and <b>Import backup</b> here (Settings).</p>
+    <div class="actions"><span class="spacer"></span><button type="button" class="btn primary" data-close>Done</button></div>
+  </dialog>
+
+  <!-- Reset -->
+  <dialog id="reset-dialog" class="sheet">
+    <form id="reset-form" method="dialog">
+      <h2 class="danger-title">Start over?</h2>
+      <p class="muted">This erases <b>all your goals, history, want list, XP, level and badges</b> on this device. Your currency and other settings stay. It can't be undone.</p>
+      <button type="button" id="r-backup" class="btn small">⬇️ Download a backup first</button>
+      <label class="field reset-field">
+        <span>Type <b>RESET</b> to confirm</span>
+        <input id="r-confirm" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="RESET" />
+      </label>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close>Cancel</button>
+        <button type="submit" id="r-go" class="btn danger-fill" disabled>Erase everything</button>
       </div>
     </form>
   </dialog>

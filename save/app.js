@@ -1107,14 +1107,15 @@ $('settings-form').addEventListener('submit', (e) => {
   settingsDialog.close();
   rerender();
 });
-$('s-export').addEventListener('click', () => {
+function exportBackup() {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
   const a = el('a');
   a.href = URL.createObjectURL(blob);
   a.download = `stash-backup-${toISODate(new Date())}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-});
+}
+$('s-export').addEventListener('click', exportBackup);
 $('s-import').addEventListener('change', (e) => {
   const file = e.target.files[0];
   e.target.value = '';
@@ -1136,6 +1137,150 @@ $('s-import').addEventListener('change', (e) => {
     route();
   });
 });
+
+/* ---------- Start over ---------- */
+
+const resetDialog = $('reset-dialog');
+$('s-reset').addEventListener('click', () => {
+  settingsDialog.close();
+  $('r-confirm').value = '';
+  $('r-go').disabled = true;
+  resetDialog.showModal();
+});
+$('r-backup').addEventListener('click', exportBackup);
+$('r-confirm').addEventListener('input', () => {
+  $('r-go').disabled = $('r-confirm').value.trim().toUpperCase() !== 'RESET';
+});
+$('reset-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if ($('r-confirm').value.trim().toUpperCase() !== 'RESET') return;
+  // Keep the settings (currency, tiers, hourly pay); erase everything else.
+  state = { settings: state.settings, goals: [], tx: [], wants: [] };
+  saveState();
+  lastPct.clear();
+  resetDialog.close();
+  if (location.hash) location.hash = '';
+  route();
+  window.scrollTo(0, 0);
+});
+
+/* ---------- Install on a phone ---------- */
+
+const installDialog = $('install-dialog');
+const ua = navigator.userAgent;
+const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/.test(ua);
+const isMobile = isIOS || isAndroid;
+let installPrompt = null; // Android/desktop Chrome's own install dialog, when offered
+
+function isInstalled() {
+  return matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  updateInstallBanner();
+});
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  updateInstallBanner();
+  installDialog.close();
+});
+
+function bannerDismissed() {
+  try {
+    return localStorage.getItem('stash.installDismissed') === '1';
+  } catch {
+    return false;
+  }
+}
+function updateInstallBanner() {
+  $('install-banner').hidden = isInstalled() || bannerDismissed() || !(isMobile || installPrompt);
+}
+$('install-banner-close').addEventListener('click', () => {
+  try {
+    localStorage.setItem('stash.installDismissed', '1');
+  } catch {
+    /* ignore */
+  }
+  updateInstallBanner();
+});
+
+function step(html) {
+  const li = el('li');
+  li.innerHTML = html;
+  return li;
+}
+
+function openInstall() {
+  const body = $('install-body');
+  body.textContent = '';
+  if (isInstalled()) {
+    body.append(el('p', 'install-ok', '✓ You’re already using the installed app.'));
+  } else if (installPrompt) {
+    body.append(el('p', null, 'Your browser can add Stash to your home screen in one tap:'));
+    const btn = el('button', 'btn primary install-now', 'Install Stash');
+    btn.type = 'button';
+    btn.addEventListener('click', async () => {
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      installPrompt = null;
+      updateInstallBanner();
+      installDialog.close();
+    });
+    body.append(btn);
+  } else if (isIOS) {
+    const inSafari = !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+    const ol = el('ol', 'steps');
+    if (!inSafari) ol.append(step('Open this page in <b>Safari</b> (works best there).'));
+    ol.append(
+      step('Tap the <b>Share</b> button <span class="kbd">⬆︎</span> at the bottom of the screen (top on iPad).'),
+      step('Scroll down and tap <b>Add to Home Screen</b> <span class="kbd">⊕</span>.'),
+      step('Tap <b>Add</b>. Stash now opens from its own icon, full screen, even offline.')
+    );
+    body.append(ol);
+  } else if (isAndroid) {
+    const ol = el('ol', 'steps');
+    ol.append(
+      step('Open this page in <b>Chrome</b>.'),
+      step('Tap the <b>⋮</b> menu at the top right.'),
+      step('Tap <b>Install app</b> (or <b>Add to Home screen</b>), then <b>Install</b>.')
+    );
+    body.append(ol);
+  } else {
+    body.append(el('p', null, 'Open this address on your phone, then come back to this screen there for the steps:'));
+    const row = el('div', 'param-row');
+    const code = el('code', null, location.href.split('#')[0]);
+    const copy = el('button', 'btn small primary', 'Copy');
+    copy.type = 'button';
+    copy.addEventListener('click', () => {
+      navigator.clipboard?.writeText(code.textContent).then(
+        () => (copy.textContent = 'Copied ✓'),
+        () => (copy.textContent = 'Copy failed')
+      );
+    });
+    row.append(code, copy);
+    body.append(row);
+  }
+  installDialog.showModal();
+}
+$('s-install').addEventListener('click', () => {
+  settingsDialog.close();
+  openInstall();
+});
+$('install-banner-btn').addEventListener('click', () => {
+  if (installPrompt) {
+    installPrompt.prompt();
+    installPrompt.userChoice.then(() => {
+      installPrompt = null;
+      updateInstallBanner();
+    });
+  } else {
+    openInstall();
+  }
+});
+updateInstallBanner();
 
 /* ---------- Celebration ---------- */
 

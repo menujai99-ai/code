@@ -360,3 +360,27 @@ body {
   .drip, .leak, .jar-box.draining .jar, .party.shame .party-icon { animation: none; }
   .drip { opacity: 1; }
 }
+
+/* ---------- Install + reset ---------- */
+.install-banner {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 8px; padding: 10px 10px 10px 14px; border-radius: 16px;
+  background: color-mix(in srgb, var(--gold) 14%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--gold) 45%, transparent);
+  font-size: 14px;
+}
+.install-banner span { flex: 1; min-width: 0; }
+.banner-close { border: 0; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 4px 6px; cursor: pointer; }
+.install-now { width: 100%; margin: 4px 0 12px; }
+.install-ok { font-weight: 600; color: var(--accent); }
+.install-note { font-size: 13.5px !important; margin: 4px 0 8px !important; }
+.kbd { display: inline-block; min-width: 1.6em; text-align: center; padding: 0 5px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); font-weight: 700; }
+
+.settings-group { margin: 4px 0 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.group-label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+.settings-group .actions { margin-top: 0; }
+.reset-btn { color: var(--danger); }
+.danger-title { color: var(--danger); }
+.reset-field { margin-top: 14px; }
+.btn.danger-fill { background: var(--danger); color: #fff; box-shadow: none; }
+.btn.danger-fill:disabled { opacity: 0.4; cursor: not-allowed; }
