@@ -21,6 +21,7 @@
   <main id="list-view" class="view">
     <header class="topbar">
       <h1>Stash</h1>
+      <button id="currency-chip" class="currency-chip" aria-label="Change currency"></button>
       <button id="settings-btn" class="icon-btn" aria-label="Settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" /></svg>
       </button>
@@ -68,6 +69,7 @@
       <h3>Fill a jar for every goal</h3>
       <p>Pick something worth saving for. Bigger goals earn more XP and a bigger treat.</p>
       <button id="empty-add-btn" class="btn primary">Create my first goal</button>
+      <p class="empty-currency">Saving in <button type="button" id="empty-currency" class="link-btn"></button></p>
     </section>
 
     <h2 class="section">Want list <small class="muted">wait before you buy</small></h2>
@@ -240,10 +242,10 @@
   <dialog id="settings-dialog" class="sheet">
     <form id="settings-form" method="dialog">
       <h2>Settings</h2>
-      <label class="field">
+      <div class="field">
         <span>Currency</span>
-        <select id="s-currency"></select>
-      </label>
+        <button type="button" id="s-currency" class="currency-field"></button>
+      </div>
       <label class="field">
         <span>A “big” goal for me starts at</span>
         <input id="s-big" type="number" inputmode="decimal" min="1" step="any" />
@@ -267,6 +269,41 @@
         <span class="spacer"></span>
         <button type="button" class="btn" data-close>Cancel</button>
         <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Currency picker -->
+  <dialog id="currency-dialog" class="sheet currency-sheet">
+    <div id="cur-pick">
+      <h2>Choose your currency</h2>
+      <input id="cur-search" class="cur-search" type="search" placeholder="Search currency or country" autocomplete="off" spellcheck="false" aria-label="Search currencies" />
+      <div id="cur-list" class="cur-list" role="listbox" aria-label="Currencies"></div>
+      <div class="actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancel</button></div>
+    </div>
+    <form id="cur-convert" method="dialog" hidden>
+      <h2 id="cur-convert-title">Switch currency</h2>
+      <p class="muted" id="cur-convert-lead"></p>
+      <label class="cur-option">
+        <input type="radio" name="curmode" value="convert" checked />
+        <span>
+          <b>Convert my amounts</b>
+          <span class="rate-row">1 <span id="cur-from"></span> = <input id="cur-rate" type="number" inputmode="decimal" min="0" step="any" aria-label="Exchange rate" /> <span id="cur-to"></span></span>
+          <small id="cur-rate-note" class="muted"></small>
+        </span>
+      </label>
+      <label class="cur-option">
+        <input type="radio" name="curmode" value="relabel" />
+        <span>
+          <b>Keep the numbers, just change the symbol</b>
+          <small class="muted">For when you typed the amounts in the new currency anyway.</small>
+        </span>
+      </label>
+      <small id="cur-hint" class="hint"></small>
+      <div class="actions">
+        <button type="button" id="cur-back" class="btn">Back</button>
+        <span class="spacer"></span>
+        <button type="submit" class="btn primary">Switch</button>
       </div>
     </form>
   </dialog>

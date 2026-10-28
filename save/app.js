@@ -16,7 +16,37 @@ const STORAGE_KEY = 'stash.v1';
 const COLORS = ['#c9971c', '#12805c', '#2a62c9', '#c2364a', '#8a55d6', '#c0682b', '#0f8a85', '#7b8494'];
 const DAY_MS = 86400000;
 const HOUR_MS = 3600000;
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'INR', 'CAD', 'AUD', 'NZD', 'SGD', 'MYR', 'PHP', 'IDR', 'THB', 'VND', 'JPY', 'KRW', 'CNY', 'HKD', 'AED', 'ZAR', 'NGN', 'KES', 'BRL', 'MXN', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'TRY'];
+/** Currencies in use today (ISO 4217), minus funds, metals and retired codes. */
+const CURRENCIES = (
+  'AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BRL BSD BTN BWP BYN BZD CAD CDF CHF CLP CNY COP CRC ' +
+  'CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD IRR ISK JMD ' +
+  'JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MYR MZN NAD ' +
+  'NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP ' +
+  'SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD UYU UZS VES VND VUV WST XAF XCD XOF XPF YER ZAR ZMW'
+)
+  .split(' ')
+  .filter(isValidCurrency);
+const POPULAR = ['USD', 'EUR', 'GBP', 'INR', 'JPY', 'CNY', 'AUD', 'CAD', 'SGD', 'MYR', 'PHP', 'IDR', 'AED', 'CHF'];
+/** Extra countries to search by, where a code's first two letters aren't its only country. */
+const CURRENCY_COUNTRIES = {
+  EUR: ['DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'AT', 'PT', 'IE', 'FI', 'GR', 'SK', 'SI', 'LU', 'LV', 'LT', 'EE', 'MT', 'CY', 'HR'],
+  USD: ['US', 'EC', 'SV', 'PA', 'PR', 'TL'],
+  XOF: ['SN', 'CI', 'ML', 'BF', 'NE', 'TG', 'BJ', 'GW'],
+  XAF: ['CM', 'GA', 'CG', 'TD', 'CF', 'GQ'],
+  XCD: ['AG', 'DM', 'GD', 'KN', 'LC', 'VC'],
+  XPF: ['PF', 'NC', 'WF'],
+  ANG: ['CW', 'SX'],
+  AUD: ['AU', 'KI', 'NR', 'TV'],
+  CHF: ['CH', 'LI'],
+};
+function isValidCurrency(c) {
+  try {
+    new Intl.NumberFormat('en', { style: 'currency', currency: c });
+    return /^[A-Z]{3}$/.test(c);
+  } catch {
+    return false;
+  }
+}
 const REGION_CURRENCY = {
   US: 'USD', GB: 'GBP', IN: 'INR', CA: 'CAD', AU: 'AUD', NZ: 'NZD', SG: 'SGD', MY: 'MYR', PH: 'PHP', ID: 'IDR', TH: 'THB',
   VN: 'VND', JP: 'JPY', KR: 'KRW', CN: 'CNY', HK: 'HKD', AE: 'AED', ZA: 'ZAR', NG: 'NGN', KE: 'KES', BR: 'BRL', MX: 'MXN',
@@ -73,7 +103,7 @@ function cleanState(raw) {
   const s = freshState();
   if (!raw || typeof raw !== 'object') return s;
   if (raw.settings) {
-    if (CURRENCIES.includes(raw.settings.currency)) s.settings.currency = raw.settings.currency;
+    if (isValidCurrency(raw.settings.currency)) s.settings.currency = raw.settings.currency;
     if (raw.settings.big > 0) s.settings.big = Number(raw.settings.big);
     if (raw.settings.wage > 0) s.settings.wage = Number(raw.settings.wage);
   }
@@ -111,6 +141,11 @@ let fmtMoney;
 let fmtMoney0;
 function setupMoney() {
   const c = state.settings.currency;
+  const label = `${currencySymbol(c)} ${c}`;
+  $('currency-chip').textContent = label;
+  $('empty-currency').textContent = `${currencyName(c)} (${c})`;
+  $('s-currency').textContent = '';
+  $('s-currency').append(el('span', 'cur-symbol', currencySymbol(c)), el('span', 'cur-name', currencyName(c)), el('span', 'cur-code', `${c} · Change`));
   fmtMoney = new Intl.NumberFormat(undefined, { style: 'currency', currency: c });
   fmtMoney0 = new Intl.NumberFormat(undefined, { style: 'currency', currency: c, maximumFractionDigits: 0 });
 }
@@ -1079,25 +1114,14 @@ $('want-form').addEventListener('submit', (e) => {
 /* ---------- Settings ---------- */
 
 const settingsDialog = $('settings-dialog');
-for (const c of CURRENCIES) {
-  const o = el('option', null, c);
-  o.value = c;
-  $('s-currency').append(o);
-}
 $('settings-btn').addEventListener('click', () => {
-  $('s-currency').value = state.settings.currency;
   $('s-big').value = state.settings.big;
   $('s-wage').value = state.settings.wage || '';
   settingsDialog.showModal();
 });
-$('s-currency').addEventListener('change', () => {
-  const big = $('s-big');
-  if (Number(big.value) === (BIG_DEFAULT[state.settings.currency] || 1000)) big.value = BIG_DEFAULT[$('s-currency').value] || 1000;
-});
 $('settings-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const big = parseFloat($('s-big').value);
-  state.settings.currency = $('s-currency').value;
   if (big > 0) state.settings.big = big;
   const wage = parseFloat($('s-wage').value);
   if (wage > 0) state.settings.wage = wage;
@@ -1137,6 +1161,196 @@ $('s-import').addEventListener('change', (e) => {
     route();
   });
 });
+
+/* ---------- Currency picker ---------- */
+
+const currencyDialog = $('currency-dialog');
+const currencyNames = (() => {
+  try {
+    return new Intl.DisplayNames(undefined, { type: 'currency' });
+  } catch {
+    return null;
+  }
+})();
+const regionNames = (() => {
+  try {
+    return new Intl.DisplayNames(undefined, { type: 'region' });
+  } catch {
+    return null;
+  }
+})();
+const fold = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+function currencySymbol(code) {
+  try {
+    const parts = new Intl.NumberFormat(undefined, { style: 'currency', currency: code, currencyDisplay: 'narrowSymbol' }).formatToParts(0);
+    return parts.find((p) => p.type === 'currency')?.value || code;
+  } catch {
+    return code;
+  }
+}
+function currencyName(code) {
+  return currencyNames?.of(code) || code;
+}
+
+let currencyIndex = null;
+function buildCurrencyIndex() {
+  currencyIndex = CURRENCIES.map((code) => {
+    const regions = CURRENCY_COUNTRIES[code] || [code.slice(0, 2)];
+    const countries = regions.map((r) => {
+      try {
+        return regionNames?.of(r) || '';
+      } catch {
+        return '';
+      }
+    });
+    const name = currencyName(code);
+    const symbol = currencySymbol(code);
+    return { code, name, symbol, search: fold([code, name, symbol, ...countries, code === 'EUR' ? 'europe eurozone' : ''].join(' ')) };
+  });
+}
+
+function currencyRow(c) {
+  const cur = c.code === state.settings.currency;
+  const row = el('button', `cur-row${cur ? ' current' : ''}`);
+  row.type = 'button';
+  row.setAttribute('role', 'option');
+  row.setAttribute('aria-selected', cur);
+  row.dataset.code = c.code;
+  row.append(el('span', 'cur-symbol', c.symbol), el('span', 'cur-name', c.name), el('span', 'cur-code', cur ? `${c.code} ✓` : c.code));
+  return row;
+}
+
+function renderCurrencyList() {
+  const list = $('cur-list');
+  list.textContent = '';
+  const q = fold($('cur-search').value.trim());
+  const byCode = new Map(currencyIndex.map((c) => [c.code, c]));
+  if (!q) {
+    const top = [...new Set([state.settings.currency, guessCurrency(), ...POPULAR])].filter((c) => byCode.has(c));
+    list.append(el('div', 'cur-group', 'Popular'));
+    for (const c of top) list.append(currencyRow(byCode.get(c)));
+    list.append(el('div', 'cur-group', 'All currencies'));
+    for (const c of [...currencyIndex].sort((a, b) => a.name.localeCompare(b.name))) list.append(currencyRow(c));
+    return;
+  }
+  const hits = currencyIndex
+    .filter((c) => c.search.includes(q))
+    // Exact code first, then names that start with the search, then the rest.
+    .sort((a, b) => (fold(b.code) === q) - (fold(a.code) === q) || fold(b.name).startsWith(q) - fold(a.name).startsWith(q) || a.name.localeCompare(b.name));
+  if (!hits.length) list.append(el('p', 'cur-empty', 'No currency matches that.'));
+  for (const c of hits) list.append(currencyRow(c));
+}
+
+function openCurrency() {
+  if (!currencyIndex) buildCurrencyIndex();
+  $('cur-pick').hidden = false;
+  $('cur-convert').hidden = true;
+  $('cur-search').value = '';
+  renderCurrencyList();
+  currencyDialog.showModal();
+  $('cur-list').scrollTop = 0;
+}
+$('cur-search').addEventListener('input', renderCurrencyList);
+$('cur-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    $('cur-list').querySelector('.cur-row')?.click();
+  }
+});
+
+function hasAmounts() {
+  return state.goals.length > 0 || state.wants.length > 0 || state.settings.wage > 0;
+}
+
+let pendingCurrency = null;
+let rateRequest = 0;
+$('cur-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.cur-row');
+  if (!row) return;
+  const to = row.dataset.code;
+  if (to === state.settings.currency) return currencyDialog.close();
+  if (!hasAmounts()) return switchCurrency(to, null);
+  // Existing amounts: ask whether to convert them or just relabel.
+  pendingCurrency = to;
+  const from = state.settings.currency;
+  $('cur-convert-title').textContent = `${from} → ${to}`;
+  $('cur-convert-lead').textContent = `Your goals, history and want list are in ${currencyName(from)}. What should happen to the amounts?`;
+  $('cur-from').textContent = from;
+  $('cur-to').textContent = to;
+  $('cur-rate').value = '';
+  $('cur-hint').textContent = '';
+  $('cur-convert').elements.curmode.value = 'convert';
+  $('cur-pick').hidden = true;
+  $('cur-convert').hidden = false;
+  fetchRate(from, to);
+});
+
+/** Today's rate from a free, key-less API. Offline or blocked → the person types it. */
+async function fetchRate(from, to) {
+  const id = ++rateRequest;
+  const note = $('cur-rate-note');
+  note.textContent = 'Looking up today’s rate…';
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 7000);
+    const res = await fetch(`https://open.er-api.com/v6/latest/${from}`, { signal: ctrl.signal });
+    clearTimeout(timer);
+    const data = await res.json();
+    const rate = data?.rates?.[to];
+    if (id !== rateRequest) return;
+    if (!(rate > 0)) throw new Error('no rate');
+    if (!$('cur-rate').value) $('cur-rate').value = Number(rate.toPrecision(6));
+    const when = data.time_last_update_unix ? fmtDate.format(new Date(data.time_last_update_unix * 1000)) : 'today';
+    note.textContent = `Market rate from ${when} (open.er-api.com). You can change it.`;
+  } catch {
+    if (id === rateRequest) note.textContent = 'Couldn’t look up the rate (offline?). Type it in.';
+  }
+}
+
+$('cur-back').addEventListener('click', () => {
+  rateRequest++;
+  $('cur-convert').hidden = true;
+  $('cur-pick').hidden = false;
+});
+$('cur-convert').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!pendingCurrency) return;
+  if ($('cur-convert').elements.curmode.value === 'relabel') return switchCurrency(pendingCurrency, null);
+  const rate = parseFloat($('cur-rate').value);
+  if (!(rate > 0)) return void ($('cur-hint').textContent = 'Enter the exchange rate, or choose “keep the numbers”.');
+  switchCurrency(pendingCurrency, rate);
+});
+
+/** Switch to `to`. With a rate, every stored amount is converted; without one, only the symbol changes. */
+function switchCurrency(to, rate) {
+  const from = state.settings.currency;
+  const r2 = (n) => Math.round(n * rate * 100) / 100;
+  if (rate) {
+    for (const g of state.goals) g.target = r2(g.target);
+    for (const t of state.tx) t.amount = r2(t.amount);
+    for (const w of state.wants) w.price = r2(w.price);
+    state.settings.big = niceRound(state.settings.big * rate);
+    if (state.settings.wage > 0) state.settings.wage = r2(state.settings.wage);
+  } else if (state.settings.big === (BIG_DEFAULT[from] || 1000)) {
+    state.settings.big = BIG_DEFAULT[to] || 1000; // still on the default: use the new currency's default
+  }
+  state.settings.currency = to;
+  rateRequest++;
+  pendingCurrency = null;
+  saveState();
+  setupMoney();
+  currencyDialog.close();
+  if (settingsDialog.open) {
+    $('s-big').value = state.settings.big;
+    $('s-wage').value = state.settings.wage || '';
+  }
+  rerender();
+}
+
+$('currency-chip').addEventListener('click', openCurrency);
+$('s-currency').addEventListener('click', openCurrency);
+$('empty-currency').addEventListener('click', openCurrency);
 
 /* ---------- Start over ---------- */
 
