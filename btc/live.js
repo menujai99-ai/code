@@ -20,7 +20,7 @@ export function parseBinance(msg) {
       type: 'kline',
       interval: k.i,
       closed: !!k.x,
-      candle: { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.q, vb: +k.v, tb: +k.V },
+      candle: { t: k.t, o: +k.o, h: +k.h, l: +k.l, c: +k.c, v: +k.q, vb: +k.v, ...(k.V != null ? { tb: +k.V } : {}) },
     }];
   }
   if (d?.e === '24hrTicker') {

@@ -17,6 +17,12 @@ test('Binance messages: trades with size and side, live candles, 24h stats', () 
     data: { e: 'kline', E: 1, k: { t: 1699999200000, i: '1h', o: '1', h: '3', l: '0.5', c: '2', v: '0.5', q: '1000', x: true } },
   });
   assert.deepEqual(k, [{ type: 'kline', interval: '1h', closed: true, candle: { t: 1699999200000, o: 1, h: 3, l: 0.5, c: 2, v: 1000, vb: 0.5 } }]);
+  // Binance also sends the taker-buy volume (V): kept as tb.
+  const withV = parseBinance({
+    stream: 'btcusdt@kline_1h',
+    data: { e: 'kline', E: 1, k: { t: 1699999200000, i: '1h', o: '1', h: '3', l: '0.5', c: '2', v: '0.5', V: '0.3', q: '1000', x: true } },
+  });
+  assert.equal(withV[0].candle.tb, 0.3);
   const st = parseBinance({ stream: 'btcusdt@ticker', data: { e: '24hrTicker', P: '0.330', h: '83203.5', l: '82724', o: '82850', v: '1343.66', q: '111600000' } });
   assert.deepEqual(st, [{ type: 'stats', high: 83203.5, low: 82724, open: 82850, change: 0.0033, volBase: 1343.66, volQuote: 111600000 }]);
   assert.deepEqual(parseBinance({ result: null, id: 1 }), []);
