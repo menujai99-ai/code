@@ -36,7 +36,8 @@ function tidy(candles) {
 // Each one:
 //   candles(interval, count, before?) -> up to `count` candles (oldest first)
 //     opening before `before` (ms), or the latest ones. v = volume in USD,
-//     vb = volume in BTC.
+//     vb = volume in BTC, tb = the part of vb bought by takers (Binance only;
+//     missing elsewhere).
 //   trades(n) -> the latest trades, oldest first: { t, price, qty, side }
 //     where side is the taker's side ('buy' or 'sell').
 //   price() -> latest trade price.
@@ -51,7 +52,7 @@ function binance(base, name) {
         const limit = Math.min(1000, count - out.length);
         const rows = await getJSON(`${base}/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=${limit}${end}`);
         if (!Array.isArray(rows) || !rows.length) break;
-        out = rows.map((r) => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[7], vb: +r[5] })).concat(out);
+        out = rows.map((r) => ({ t: r[0], o: +r[1], h: +r[2], l: +r[3], c: +r[4], v: +r[7], vb: +r[5], tb: +r[9] })).concat(out);
         end = `&endTime=${rows[0][0] - 1}`;
         if (rows.length < limit) break;
       }
