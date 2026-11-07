@@ -235,6 +235,7 @@ a { color: var(--accent-text); }
 .sig-line { display: flex; align-items: center; gap: 10px; }
 .sig-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; background: var(--surface-2); }
 .sig-chip.flat { color: var(--muted); }
+.sig-chip.small { background: transparent; border: 1px solid var(--line); color: var(--text); }
 .sig-p { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 600; }
 .sig-ev { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .signal-risk { font-size: 14px; margin: 10px 0 4px; }

@@ -12,9 +12,9 @@
 //                                                  flow really predicts the next hour
 //   node btc/scripts/research.mjs --synthetic none  simulated prices with no edge at all
 
-import { fitGarch, filterVariance, logReturns, buildFeatures, FEATURE_NAMES, fitLogit, predictLogit, ema } from '../model.js';
-import { HOURLY_EMAS } from '../forecast.js';
+import { fitGarch, filterVariance, logReturns, fitLogit, predictLogit, ema } from '../model.js';
 import { EXCHANGES } from '../data.js';
+import { directionFeatures as features, LONG_EMAS } from '../direction.js';
 import { rng, normal } from '../test/synthetic.mjs';
 
 const H = 3600e3;
@@ -72,78 +72,8 @@ function simulate(n, mode, seed = 5) {
 }
 
 // ---------- Features ----------
-// Every value at candle p uses only candles up to and including p.
-
-function features(candles, sig2, emaLong) {
-  const n = candles.length;
-  const closes = candles.map((c) => c.c);
-  const cols = [];
-  const col = (group, name, fill) => {
-    const v = new Float64Array(n).fill(NaN);
-    for (let p = 0; p < n; p++) v[p] = fill(p);
-    cols.push({ group, name, v });
-  };
-  const sd = (p) => Math.sqrt(sig2[Math.max(p - 1, 0)]); // one-step sd known at candle p
-
-  // Today's 12 (price, indicators, volume).
-  const base = buildFeatures(candles, sig2, HOURLY_EMAS);
-  FEATURE_NAMES.forEach((name, j) => col('base', name, (p) => (base[p] ? base[p][j] : NaN)));
-
-  // Taker-buy share (who pushed) over the last 1/4/24 hours, against the past week.
-  const share = candles.map((c) => (c.vb > 0 && Number.isFinite(c.tb) ? c.tb / c.vb : 0.5));
-  const pre = [0];
-  const pre2 = [0];
-  for (const x of share) {
-    pre.push(pre[pre.length - 1] + x);
-    pre2.push(pre2[pre2.length - 1] + x * x);
-  }
-  const mean = (a, b) => (pre[b + 1] - pre[a]) / (b - a + 1);
-  for (const k of [1, 4, 24]) {
-    col('flow', `taker buys ${k}h`, (p) => {
-      if (p < 168 + k) return NaN;
-      const m = mean(p - 168, p - 1);
-      const v = (pre2[p] - pre2[p - 168]) / 168 - m * m;
-      return v > 0 ? (mean(p - k + 1, p) - m) / Math.sqrt(v / k) : 0;
-    });
-  }
-
-  // Returns over several spans, in sds.
-  for (const k of [1, 3, 6, 12, 24, 72, 168]) {
-    col('returns', `return ${k}h`, (p) => (p >= k ? Math.log(closes[p] / closes[p - k]) / (sd(p) * Math.sqrt(k)) : NaN));
-  }
-
-  // Where the price sits in the last 24 hours' range.
-  col('range', '24h range position', (p) => {
-    if (p < 23) return NaN;
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (let j = p - 23; j <= p; j++) {
-      lo = Math.min(lo, candles[j].l);
-      hi = Math.max(hi, candles[j].h);
-    }
-    return hi > lo ? (closes[p] - lo) / (hi - lo) - 0.5 : 0;
-  });
-
-  // Calm or wild market, and momentum in each.
-  const lsd = Array.from({ length: n }, (_, p) => Math.log(sd(p)));
-  const lpre = [0];
-  for (const x of lsd) lpre.push(lpre[lpre.length - 1] + x);
-  const regime = (p) => (p >= 720 ? lsd[p] - (lpre[p] - lpre[p - 720]) / 720 : NaN);
-  col('regime', 'volatility regime', regime);
-  col('regime', 'regime × 24h return', (p) => (p >= 720 ? regime(p) * Math.log(closes[p] / closes[p - 24]) / (sd(p) * Math.sqrt(24)) : NaN));
-
-  // Hour of day and day of week (UTC, at the candle's close).
-  const when = (p) => new Date(candles[p].t + H);
-  col('time', 'hour sin', (p) => Math.sin((2 * Math.PI * when(p).getUTCHours()) / 24));
-  col('time', 'hour cos', (p) => Math.cos((2 * Math.PI * when(p).getUTCHours()) / 24));
-  col('time', 'weekday sin', (p) => Math.sin((2 * Math.PI * when(p).getUTCDay()) / 7));
-  col('time', 'weekday cos', (p) => Math.cos((2 * Math.PI * when(p).getUTCDay()) / 7));
-
-  // Long trend: price against ~50-day and ~200-day averages.
-  col('trend', 'vs 50-day average', (p) => Math.log(closes[p] / emaLong[0][p]) / sd(p));
-  col('trend', 'vs 200-day average', (p) => Math.log(closes[p] / emaLong[1][p]) / sd(p));
-  return cols;
-}
+// The candidates live in btc/direction.js, so the model the app ships is
+// computed by exactly the code tested here.
 
 // ---------- Models ----------
 
@@ -165,7 +95,7 @@ function configs() {
 function walk(candles, from, to, h, list, onFoldFit) {
   const closes = candles.map((c) => c.c);
   const returns = logReturns(closes);
-  const emaLong = [ema(closes, 1200), ema(closes, 4800)];
+  const emaLong = LONG_EMAS.map((p) => ema(closes, p));
   const preds = list.map(() => []);
   for (let S = from; S < to; S += FOLD) {
     const end = Math.min(S + FOLD, to);

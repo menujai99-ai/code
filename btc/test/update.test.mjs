@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { run, priceAt, scoreHistory, summarize } from '../scripts/update.mjs';
 import { garchPath } from './synthetic.mjs';
+import { directionSeries, DIRECTION_V } from '../direction.js';
 
 const H = 3600e3;
 const D = 24 * H;
@@ -41,6 +42,9 @@ test('updater writes a forecast, logs it, and scores predictions once they matur
   assert.ok(forecast.cards['24h'].lo95 < forecast.price && forecast.price < forecast.cards['24h'].hi95);
   assert.equal(first.fresh.length, 0, 'nothing has matured yet');
   assert.ok(Object.values(forecast.backtest).every((b) => b.count > 0 && !('rows' in b)), 'backtest totals only, no replay rows');
+  assert.equal(forecast.pUp['24h'], 0.5, 'no 24h lean');
+  assert.equal(first.direction, null);
+  assert.ok(!fs.existsSync(path.join(out, 'direction.json')), 'no long history: no 1h model file');
 
   const t2 = end - 2 * H + 7 * 60e3; // 28 hours later: 1h, 4h and 24h from run 1 have matured
   const second = await run({ out, fixture: dir, now: t2 });
@@ -70,3 +74,23 @@ test('scoring counts ranges and direction', () => {
 function close(a, b) {
   assert.ok(Math.abs(a - b) < 1e-9, `${a} vs ${b}`);
 }
+
+test('with years of hourly candles the job publishes the 1h model and uses it', async () => {
+  const { dir, end } = fixture();
+  const long = garchPath({ n: 6500, t0: end - 6499 * H, seed: 11 }).map((c) => ({ ...c, vb: c.v / c.c, tb: (0.48 * c.v) / c.c }));
+  fs.writeFileSync(path.join(dir, 'hourly-long.json'), JSON.stringify(long));
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'btc-out-'));
+  const t = end + 7 * 60e3; // the candle that opened at `end` is still running
+  const res = await run({ out, fixture: dir, now: t });
+  const model = JSON.parse(fs.readFileSync(path.join(out, 'direction.json'), 'utf8'));
+  const done = long.filter((c) => c.t + H <= t);
+  assert.equal(model.version, DIRECTION_V);
+  assert.equal(model.lastT, done.at(-1).t, 'trained up to the last finished hour');
+  assert.equal(model.trainedAt, t);
+  assert.equal(model.replay.length, 240);
+  const pUp = directionSeries(model, done.slice(-2000)).at(-1).pUp;
+  assert.ok(Math.abs(res.forecast.pUp['1h'] - pUp) < 1e-9, 'forecast uses the published model');
+  assert.equal(res.forecast.pUp['24h'], 0.5);
+  assert.equal(res.forecast.direction.trainedOn.rows, model.trainedOn.rows);
+  assert.equal(res.entry.h['1h'].pUp, res.forecast.cards['1h'].pUp, 'the shared log records it');
+});

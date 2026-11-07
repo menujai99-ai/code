@@ -253,14 +253,15 @@ async function getText(url, ms = 12000) {
   }
 }
 
-// The latest forecast, the totals, and the full logs: every saved prediction
-// (history) and every checked one (scores).
+// The latest forecast, the totals, the full logs (every saved prediction and
+// every checked one), and the 1h up/down model trained on years of data.
 export async function loadBackground(base = BACKGROUND_URL) {
-  const [forecast, track, history, scores] = await Promise.allSettled([
+  const [forecast, track, history, scores, direction] = await Promise.allSettled([
     getJSON(`${base}/forecast.json`),
     getJSON(`${base}/track.json`),
     getText(`${base}/history.jsonl`),
     getText(`${base}/scores.jsonl`),
+    getJSON(`${base}/direction.json`), // the 1h up/down model (btc/direction.js)
   ]);
   const ok = (r) => (r.status === 'fulfilled' ? r.value : null);
   return {
@@ -268,5 +269,6 @@ export async function loadBackground(base = BACKGROUND_URL) {
     track: ok(track),
     history: history.status === 'fulfilled' ? parseLines(history.value) : null,
     scores: scores.status === 'fulfilled' ? parseLines(scores.value) : null,
+    direction: ok(direction),
   };
 }

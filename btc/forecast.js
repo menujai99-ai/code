@@ -120,16 +120,22 @@ export const SIGNAL_MIN_LIVE = 30; // checked live predictions before trusting t
 
 // pUp: chance of going up now. replay: the backtest row (hitRate, ups share,
 // called). live: the background job's track row (hits, called, ups, count), if any.
-export function signalFor({ pUp, replay, live }) {
-  const useLive = live && live.called >= SIGNAL_MIN_LIVE && live.count > 0 && Number.isFinite(live.ups);
-  const ev = useLive
-    ? { source: 'live', n: live.called, right: live.hits / live.called, upShare: live.ups / live.count }
-    : { source: 'replay', n: replay?.called ?? 0, right: replay?.hitRate ?? NaN, upShare: replay?.ups ?? NaN };
-  const baseline = Math.max(ev.upShare, 1 - ev.upShare);
+// record: a full-year test of the model in use (right, baseline, n, cutoff),
+// which then is the evidence. A tested edge too small for buy/sell (at least
+// 1 point) is reported as `small` when the model leans past the tested cutoff.
+export function signalFor({ pUp, replay, live, record }) {
+  const useLive = !record && live && live.called >= SIGNAL_MIN_LIVE && live.count > 0 && Number.isFinite(live.ups);
+  const ev = record
+    ? { source: 'test', n: record.n, right: record.right, upShare: NaN, baseline: record.baseline }
+    : useLive
+      ? { source: 'live', n: live.called, right: live.hits / live.called, upShare: live.ups / live.count }
+      : { source: 'replay', n: replay?.called ?? 0, right: replay?.hitRate ?? NaN, upShare: replay?.ups ?? NaN };
+  const baseline = ev.baseline ?? Math.max(ev.upShare, 1 - ev.upShare);
   const edge = ev.right - baseline;
   const leans = Math.abs(pUp - 0.5) >= SIGNAL_MIN_LEAN;
   const lean = Number.isFinite(edge) && edge >= SIGNAL_MIN_EDGE && leans ? (pUp > 0.5 ? 'buy' : 'sell') : 'none';
-  return { lean, pUp, ...ev, baseline, edge };
+  const small = !!record && lean === 'none' && edge >= SIGNAL_MIN_EDGE / 2 && Math.abs(pUp - 0.5) >= record.cutoff;
+  return { lean, small, pUp, ...ev, baseline, edge };
 }
 
 // ---------- Trade planner ----------

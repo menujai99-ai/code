@@ -12,6 +12,7 @@ import {
 import { LiveFeed, applyTick, upsertCandle } from './live.js';
 import { createBinanceChart, MAIN_KINDS, SUB_KINDS } from './chart.js';
 import { predictionEntry, cardsOf, scoreHistory, predictionRows, tally, trimLog, replayLog } from './track.js';
+import { directionSeries, DIRECTION_V, DIRECTION_MAX_AGE, RESEARCH_1H, RESEARCH_24H } from './direction.js';
 
 const HOUR = 3600e3;
 const DAY = 24 * HOUR;
@@ -82,6 +83,7 @@ const state = {
   background: null,
   plan: planFrom(load(PLAN_KEY, {})),
   snap: null, // the prediction on screen: { slot, t, price, model }
+  direction: null, // the 1h model in use, when fresh: { model, series }
   refitPending: false,
   device: {
     history: listFrom(load(HISTORY_KEY, [])),
@@ -240,9 +242,13 @@ async function refreshAll() {
     if (!state.model) setStatus('Calculating forecast…');
     state.model = await fitModel(finished(market.hourly, HOUR, now), finished(market.daily, DAY, now));
     state.lastModel = Date.now();
+    applyDirection();
     startFeed();
     if (!state.trades.length) loadTrades();
     await loadChart(state.interval, { merge: true });
+    // The first prediction waits briefly for the 1h model file.
+    if (!state.snap && firstBackground) await Promise.race([firstBackground, new Promise((r) => setTimeout(r, 3000))]);
+    applyDirection();
     render(true);
     refreshExtras();
   } catch (err) {
@@ -257,13 +263,60 @@ async function refreshAll() {
   }
 }
 
+// Up/down. 1h: the model tested on a full year (btc/README.md), trained by the
+// background job on years of data and applied here to the latest candles; the
+// app's own model only while that file is missing or more than a week old.
+// 24h: no lean, since nothing tested beat guessing.
+// Returns true when the model on screen changed.
+function applyDirection() {
+  const m = state.model;
+  if (!m || !state.market) return false;
+  m.own1h ??= m.pUp['1h'];
+  m.pUp['24h'] = 0.5;
+  const before = state.direction;
+  const d = state.background?.direction;
+  const fresh = d?.version === DIRECTION_V && Date.now() - d.trainedAt < DIRECTION_MAX_AGE;
+  const series = fresh ? directionSeries(d, finished(state.market.hourly, HOUR, Date.now())) : null;
+  state.direction = series?.length ? { model: d, series } : null;
+  m.pUp['1h'] = state.direction ? series[series.length - 1].pUp : m.own1h;
+  return (before?.model ?? null) !== (state.direction?.model ?? null);
+}
+
+// The full-year test record of the model making the call, if it has one.
+const recordFor = (key) => (key === '1h' && state.direction ? RESEARCH_1H : null);
+
+// The replays, with the 1h calls made by the model in use: before its last
+// training hour from the job's honest replay, after it by the model itself
+// (it never saw those hours). 24h: no calls.
+function replayTests() {
+  const tests = state.model.tests;
+  const noCall = (r) => ({ ...r, pUp: 0.5 });
+  const scored = (rows) => {
+    const called = rows.filter((r) => r.pUp !== 0.5);
+    const hits = called.filter((r) => (r.pUp > 0.5) === (r.actual > r.price)).length;
+    return { called: called.length, hits, hitRate: called.length ? hits / called.length : NaN };
+  };
+  const out = { ...tests, '24h': { ...tests['24h'], rows: tests['24h'].rows.map(noCall), called: 0, hits: 0, hitRate: NaN } };
+  if (state.direction) {
+    const calls = new Map((state.direction.model.replay || []).map((r) => [r.t, r.pUp]));
+    for (const r of state.direction.series) calls.set(r.t, r.pUp);
+    const rows = tests['1h'].rows.map((r) => ({ ...r, pUp: calls.get(r.t) ?? 0.5 }));
+    out['1h'] = { ...tests['1h'], rows, ...scored(rows) };
+  }
+  return out;
+}
+
 async function refreshExtras() {
   state.extras = await loadExtras();
   if (state.market) renderIndicators();
 }
 
+let firstBackground = null; // the first load of the background files
 async function refreshBackground() {
-  state.background = await loadBackground().catch(() => null);
+  const load = loadBackground().catch(() => null);
+  firstBackground ??= load;
+  state.background = await load;
+  if (applyDirection()) render(true); // takes effect at the next 15-minute prediction
   if (state.historyView.source === 'background') renderHistory(); // otherwise nothing it shows has changed
   if (state.model && state.forecast && state.market) renderSignal();
   if (!state.market) showBackgroundForecast();
@@ -358,6 +411,7 @@ async function refit() {
     const now = Date.now();
     state.model = await fitModel(finished(hourly, HOUR, now), finished(daily, DAY, now));
     state.lastModel = Date.now();
+    applyDirection();
     render(true);
   } catch (err) {
     console.warn('Refit failed', err);
@@ -618,12 +672,16 @@ function renderSignal() {
   const track = state.background?.track?.horizons || {};
   const sigs = HORIZONS.map((hz) => ({
     hz,
-    s: signalFor({ pUp: state.forecast.cards[hz.key].pUp, replay: state.model.tests[hz.key], live: track[hz.key] }),
+    s: signalFor({ pUp: state.forecast.cards[hz.key].pUp, replay: state.model.tests[hz.key], live: track[hz.key], record: recordFor(hz.key) }),
   }));
   const leaning = sigs.filter((x) => x.s.lean !== 'none');
   const head = $('signal-head');
   const sides = new Set(leaning.map((x) => x.s.lean));
-  if (!leaning.length) {
+  const small = sigs.find((x) => x.s.small);
+  if (!leaning.length && small) {
+    head.textContent = `No buy/sell signal. The next hour leans ${small.s.pUp > 0.5 ? 'up' : 'down'} with only a small tested edge (${pct0(small.s.pUp)} chance up). Use the ranges below to judge your risk.`;
+    head.className = 'signal-head flat';
+  } else if (!leaning.length) {
     head.textContent = 'No clear edge right now: the model can’t call the direction better than guessing. Use the ranges below to judge your risk.';
     head.className = 'signal-head flat';
   } else if (sides.size > 1) {
@@ -634,17 +692,29 @@ function renderSignal() {
     head.textContent = `${side === 'buy' ? '▲' : '▼'} Leaning ${SIDE[side].word} (${leaning.map((x) => x.hz.key).join(', ')}) — a small edge, not a sure thing.`;
     head.className = `signal-head ${SIDE[side].cls}`;
   }
+  const pct1 = (x) => `${(x * 100).toFixed(1)}%`;
+  const month = (d) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
   const rows = sigs.map(({ hz, s }) => {
     const guess = s.upShare >= 0.5 ? 'up' : 'down';
-    const evidence = Number.isFinite(s.right)
+    let chip = SIDE[s.lean];
+    let evidence = Number.isFinite(s.right)
       ? `right ${pct0(s.right)} vs ${pct0(s.baseline)} by always guessing ${guess} (${s.n} ${s.source === 'live' ? 'live' : 'replayed'})`
       : 'no record yet';
+    if (s.source === 'test') {
+      const r = RESEARCH_1H;
+      if (s.small) chip = { cls: 'small', chip: `${s.pUp > 0.5 ? '▲' : '▼'} Small edge` };
+      evidence = `Tested on a full year (${month(r.from)} – ${month(r.to)}): right ${pct1(r.right)} vs ${pct1(r.baseline)} by always guessing; the old model ${pct1(r.oldModel)}.`;
+    }
+    if (hz.key === '24h') {
+      chip = { cls: 'flat', chip: 'No reliable call' };
+      evidence = `Tested on a full year (${month(RESEARCH_24H.from)} – ${month(RESEARCH_24H.to)}): nothing beat guessing (the old model was right ${pct1(RESEARCH_24H.oldModel)}).`;
+    }
     return el('tr', {},
       el('td', { class: 'sig-h' }, hz.key),
       el('td', {},
         el('div', { class: 'sig-line' },
-          el('span', { class: `sig-chip ${SIDE[s.lean].cls}` }, SIDE[s.lean].chip),
-          el('span', { class: 'sig-p' }, `${pct0(s.pUp)} chance up`)),
+          el('span', { class: `sig-chip ${chip.cls}` }, chip.chip),
+          el('span', { class: 'sig-p' }, hz.key === '24h' ? 'no lean' : `${pct0(s.pUp)} chance up`)),
         el('div', { class: 'sig-ev' }, evidence)));
   });
   $('signal-rows').replaceChildren(el('tbody', {}, ...rows));
@@ -657,7 +727,7 @@ function renderSignal() {
   const mini = $('signal-mini');
   mini.hidden = false;
   mini.className = `signal-mini ${head.className.replace('signal-head', '').trim()}`;
-  mini.textContent = !leaning.length ? 'Signal: no clear edge ›' : sides.size > 1 ? 'Signal: mixed ›'
+  mini.textContent = !leaning.length ? (small ? `Signal: small 1h edge ${small.s.pUp > 0.5 ? '▲' : '▼'} ›` : 'Signal: no clear edge ›') : sides.size > 1 ? 'Signal: mixed ›'
     : `Signal: leaning ${SIDE[[...sides][0]].word.toLowerCase()} (${leaning.map((x) => x.hz.key).join(', ')}) ›`;
 }
 
@@ -742,7 +812,7 @@ function renderPlanner() {
 
   // Verdict: positive expectation only counts where the model has beaten guessing.
   const track = state.background?.track?.horizons || {};
-  const sig = signalFor({ pUp: m.pUp[key], replay: m.tests[key], live: track[key] });
+  const sig = signalFor({ pUp: m.pUp[key], replay: m.tests[key], live: track[key], record: recordFor(key) });
   const wanted = p.side === 'long' ? 'buy' : 'sell';
   const feeR = ((p.fee / 100) * 2 * entry) / odds.risk;
   let verdict;
@@ -836,7 +906,7 @@ function renderCards() {
   const made = state.forecast.now;
   for (const hz of HORIZONS) {
     const f = state.forecast.cards[hz.key];
-    const lean = leanText(f.pUp);
+    const lean = hz.key === '24h' ? { cls: 'flat', text: 'No reliable up/down call' } : leanText(f.pUp);
     const span = f.hi95 - f.lo95;
     const pos = (x) => `${((x - f.lo95) / span) * 100}%`;
     const seg = (cls, a, b) => el('i', { class: `seg ${cls}`, style: `left:${pos(a)};width:calc(${pos(b)} - ${pos(a)})` });
@@ -947,7 +1017,7 @@ function renderIndicators() {
 }
 
 function renderBacktest() {
-  const t = state.model.tests;
+  const t = replayTests();
   const pct = (x) => (Number.isFinite(x) ? `${Math.round(x * 100)}%` : '—');
   const head = el('tr', {}, ...['Horizon', '50% held', '80% held', '95% held', 'Direction right', 'Tests'].map((h) => el('th', {}, h)));
   const rows = HORIZONS.map((hz) => {
@@ -1059,13 +1129,13 @@ function renderChartLive() {
   const cards = snap && state.forecast?.cards;
   chart.setHorizons(cards ? MARKER_HOURS.map(([key]) => {
     const c = cards[key];
-    const s = signalFor({ pUp: c.pUp, replay: state.model.tests[key], live: track[key] });
+    const s = signalFor({ pUp: c.pUp, replay: state.model.tests[key], live: track[key], record: recordFor(key) });
     return { key, t: c.t, mid: c.mid, lo50: c.lo50, hi50: c.hi50, pUp: c.pUp, edge: s.lean !== 'none' };
   }) : [], snap?.price, snap?.t);
   const word = (c) => (c.pUp > 0.5 ? `up (${pct0(c.pUp)})` : c.pUp < 0.5 ? `down (${pct0(1 - c.pUp)})` : 'flat (50/50)');
   let caption = cards
     ? `Arrows: the likely direction in 1h ${word(cards['1h'])}, 4h ${word(cards['4h'])} and 24h ${word(cards['24h'])}. ` +
-      'Coloured where the model has an edge; grey means close to a coin flip.'
+      'Coloured where the model has an edge; grey means close to a coin flip. 24h: no reliable up/down call (tested).'
     : '';
   const g = state.ghosts[state.ghosts.length - 1];
   if (state.ranges && g) caption += ` Grey candles: the full range for the next ${state.ghosts.length} ${cfg.label} candles (95%: ${money(g.lo95)} – ${money(g.hi95)} by ${when(g.end)}).`;
@@ -1249,11 +1319,13 @@ function callText(r) {
   return r.score ? `${sym} ${r.score.hit ? '✓' : '✗'}` : sym;
 }
 
-let replayed = { model: null, log: { history: [], scores: [] } };
+let replayed = { model: null, direction: null, log: { history: [], scores: [] } };
 function historySource() {
   if (state.historyView.source === 'device') return state.device;
   if (state.historyView.source === 'replay') {
-    if (state.model && replayed.model !== state.model) replayed = { model: state.model, log: replayLog(state.model.tests) };
+    if (state.model && (replayed.model !== state.model || replayed.direction !== state.direction)) {
+      replayed = { model: state.model, direction: state.direction, log: replayLog(replayTests()) };
+    }
     return replayed.log;
   }
   return { history: state.background?.history || [], scores: state.background?.scores || [] };
@@ -1278,7 +1350,12 @@ function renderHistory() {
   const waiting = rows.filter((r) => !r.score);
   const track = state.background?.track;
   let note = replay
-    ? `The model re-run ${{ '1h': 'every hour', '4h': 'every 4 hours', '24h': 'every 3 hours', '7d': 'every day' }[v.key]} over the last ${v.key === '1h' ? 10 : 30} days, using only the data it had then, and checked against what happened next: the same replays as “How well has it worked?”. The up/down chance is the model’s own lean; the live app pulls it toward 50% where it hasn’t beaten guessing.`
+    ? `The model re-run ${{ '1h': 'every hour', '4h': 'every 4 hours', '24h': 'every 3 hours', '7d': 'every day' }[v.key]} over the last ${v.key === '1h' ? 10 : 30} days, using only the data it had then, and checked against what happened next: the same replays as “How well has it worked?”. ${{
+      '1h': state.direction
+        ? 'Up/down calls come from the tested 1h model, made by a version trained only on the hours before them.'
+        : 'The up/down chance is the model’s own lean; the live app pulls it toward 50% where it hasn’t beaten guessing.',
+      '24h': 'No up/down calls: nothing tested beat guessing for 24 hours.',
+    }[v.key] ?? 'The up/down chance is the model’s own lean; the live app pulls it toward 50% where it hasn’t beaten guessing.'}`
     : device
     ? 'Saved on this device every 15 minutes while the app is open (the fixed prediction shown above the chart), then checked against the price when its time comes.'
     : `Saved by the background job on GitHub, which runs a few times a day even when nobody has the app open; the same for everyone.${track ? ` Last run ${when(track.updatedAt)}.` : ''}`;
